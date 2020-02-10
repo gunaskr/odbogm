@@ -26,7 +26,7 @@ public class QueryTest {
 
     @Before
     public void setUp() {
-        sm = new SessionManager("remote:localhost/Test", "admin", "admin");
+        sm = new SessionManager("remote:localhost/test-ogm", "admin", "admin");
         sm.begin();
     }
 

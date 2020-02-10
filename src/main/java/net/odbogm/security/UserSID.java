@@ -82,7 +82,8 @@ public final class UserSID implements ISID, ISecurityCredentials {
     @Override
     public List<String> showSecurityCredentials() {
         //uuid del UserSID actual
-        List<String> sc = new ArrayList<>(List.of(uuid));
+        List<String> sc = new ArrayList<>();
+        sc.add(uuid);
         //recuperar todos los grupos a los que pertenece el UserSID actual
         sc.addAll(this.groups.stream().map(gid -> gid.getUUID()).collect(Collectors.toList()));
         //grupos a los que pertenecen los grupos

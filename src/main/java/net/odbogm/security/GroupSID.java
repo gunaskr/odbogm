@@ -16,7 +16,7 @@ import net.odbogm.exceptions.CircularReferenceException;
  * @author Marcelo D. Ré {@literal <marcelo.re@gmail.com>}
  */
 @Entity
-public final class GroupSID implements ISID {
+public class GroupSID implements ISID {
     private final static Logger LOGGER = Logger.getLogger(GroupSID.class .getName());
     static {
         if (LOGGER.getLevel() == null) {

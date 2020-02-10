@@ -28,7 +28,7 @@ public class SecurityObjectsTest {
 
     @Before
     public void setUp() {
-        sm = new SessionManager("remote:localhost/Test", "admin", "admin");
+        sm = new SessionManager("remote:localhost/test-ogm", "admin", "admin");
         sm.begin();
     }
 
@@ -267,7 +267,7 @@ public class SecurityObjectsTest {
         sm.setLoggedInUser(user);
         
         int res = 0;
-        for (var v : sm.query(SSimpleVertex.class)) {
+        for (SSimpleVertex v : sm.query(SSimpleVertex.class)) {
             if (v.getSecurityState() == AccessRight.ACCESSCONTROL) res++;
         }
         assertEquals(1, res);

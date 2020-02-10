@@ -1060,7 +1060,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
         
         
         LOGGER.log(Level.FINER, "Reverting basic attributes.........");
-        for (var entry : classdef.fields.entrySet()) {
+        for (Map.Entry<String, Class<?>> entry : classdef.fields.entrySet()) {
             String prop = entry.getKey();
             if (!classdef.embeddedFields.containsKey(prop)) {
                 LOGGER.log(Level.FINER, "Rollingback field {0} ....", new String[]{prop});

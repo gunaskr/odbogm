@@ -267,7 +267,7 @@ public class ObjectMapper {
         // procesar los atributos básicos
         // ********************************************************************************************
         Field f;
-        for (var entry : classdef.fields.entrySet()) {
+        for (Map.Entry<String, Class<?>> entry : classdef.fields.entrySet()) {
             String prop = entry.getKey();
             if (!classdef.embeddedFields.containsKey(prop)) {
                 LOGGER.log(Level.FINER, "Buscando campo {0} de tipo {1}...",
@@ -293,7 +293,7 @@ public class ObjectMapper {
             String prop = entry.getKey();
             LOGGER.log(Level.FINER, "Buscando campo {0} ....", new String[]{prop});
             Object value = v.getProperty(prop);
-            if (value != null && value.toString() != null && !value.toString().isBlank()) {
+            if (value != null && value.toString() != null && !value.toString().isEmpty()) {
                 // FIXME: este código se puede mejorar. Tratar de usar solo setFieldValue()
                 f = classdef.fieldsObject.get(prop);
                 Object enumValue = Enum.valueOf(f.getType().asSubclass(Enum.class), value.toString());

@@ -78,7 +78,7 @@ public class Test {
     public void initSession() {
         System.out.println("Iniciando comunicación con la base....");
         long millis = System.currentTimeMillis();
-        sm = new SessionManager("remote:localhost/Test", "root", "toor")
+        sm = new SessionManager("remote:localhost/test-ogm", "root", "toor")
                     .setActivationStrategy(SessionManager.ActivationStrategy.CLASS_INSTRUMENTATION)
 //                    .setClassLevelLog(Transaction.class, Level.FINER)
 //                    .setClassLevelLog(SessionManager.class, Level.FINER)
@@ -110,7 +110,7 @@ public class Test {
     }
 
     public void testDbManager() {
-        DbManager dbm = new DbManager("remote:localhost/Test", "root", "toor");
+        DbManager dbm = new DbManager("remote:localhost/test-ogm", "root", "toor");
 //        dbm.generateToConsole(new String[]{"Test"});
         dbm.generateDBSQL("/tmp/1/test.sql", new String[]{"Test"});
 
@@ -914,7 +914,7 @@ public class Test {
     
     private void testMultiTran() {
         
-        OrientGraphFactory fact = new OrientGraphFactory("remote:localhost/Test", "root", "toor").setupPool(1, 10);
+        OrientGraphFactory fact = new OrientGraphFactory("remote:localhost/test-ogm", "root", "toor").setupPool(1, 10);
         
         OrientGraph t1 = fact.getTx();
         OrientGraph t2 = fact.getTx();
