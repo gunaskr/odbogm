@@ -22,15 +22,9 @@ import test.SSimpleVertex;
  *
  * @author jbertinetti
  */
-public class SecurityObjectsTest {
+public class SecurityObjectsTest extends IntegrationTest {
 
     private SessionManager sm;
-
-    @Before
-    public void setUp() {
-        sm = new SessionManager("remote:localhost/test-ogm", "admin", "admin");
-        sm.begin();
-    }
 
     @After
     public void tearDown() {

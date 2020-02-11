@@ -1,17 +1,24 @@
 package net.odbogm;
 
-import com.orientechnologies.orient.core.metadata.schema.OClass;
-import com.tinkerpop.blueprints.impls.orient.OrientEdge;
-import com.tinkerpop.blueprints.impls.orient.OrientGraph;
-import com.tinkerpop.blueprints.impls.orient.OrientGraphFactory;
-import com.tinkerpop.blueprints.impls.orient.OrientGraphNoTx;
 import java.lang.ref.WeakReference;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import net.odbogm.agent.TransparentDirtyDetectorAgent;
+
+import javax.sql.DataSource;
+
+import com.orientechnologies.orient.core.db.ODatabaseSession;
+import com.orientechnologies.orient.core.metadata.schema.OClass;
+import com.orientechnologies.orient.core.record.OEdge;
+import com.orientechnologies.orient.jdbc.OrientJdbcConnection;
+import com.tinkerpop.blueprints.impls.orient.OrientGraph;
+import com.tinkerpop.blueprints.impls.orient.OrientGraphFactory;
+import com.tinkerpop.blueprints.impls.orient.OrientGraphNoTx;
+
 import net.odbogm.audit.Auditor;
 import net.odbogm.exceptions.ClassToVertexNotFound;
 import net.odbogm.exceptions.ConcurrentModification;
@@ -41,25 +48,32 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
         }
     }
 
-    private OrientGraphFactory factory;
+    //private OrientGraphFactory factory;
+    
+    private final DataSource datasource;
 
-    // uso un solo objectMapper para ahorar memoria. Estas instancia se comparte entre las transacciones.
+    // Using single objectMapper to save memory. These instances are shared among all transactions.
     private ObjectMapper objectMapper;
     
     public enum ActivationStrategy {
-        CLASS_INSTRUMENTATION // modifica con un agente la clase para agregar la detección de escritura
+        CLASS_INSTRUMENTATION // modify the class with an agent to add write detection
     }
     
     private ActivationStrategy activationStrategy;
     
     private List<WeakReference<Transaction>> openTransactionsList = new ArrayList<>();
-    private Transaction publicTransaction; 
+    private Transaction transaction; 
     
-    // usuario logueado sobre el que se ejecutan los controles de seguridad si corresponden
+    // user logged on over which security controls are executed if applicable
     private UserSID loggedInUser;
 
+    public SessionManager(DataSource datasource) throws SQLException {
+    	this.datasource = datasource;
+    	this.objectMapper = new ObjectMapper();
+    	this.setActivationStrategy(ActivationStrategy.CLASS_INSTRUMENTATION, true);
+    }
     
-    public SessionManager(String url, String user, String passwd) {
+    /*public SessionManager(String url, String user, String passwd) {
         this.init(url, user, passwd, 1, 10, true);
     }
 
@@ -80,7 +94,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
         this.factory = new OrientGraphFactory(url, user, passwd).setupPool(minPool, maxPool);
         this.objectMapper = new ObjectMapper();
         this.setActivationStrategy(ActivationStrategy.CLASS_INSTRUMENTATION, loadAgent);
-    }
+    }*/
 
     /**
      * Establece la estrategia a utilizar para detectar los cambios en los objetos.
@@ -104,9 +118,6 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
     private SessionManager setActivationStrategy(ActivationStrategy as, boolean loadAgent) {
         this.activationStrategy = as;
         LOGGER.log(Level.INFO, "ActivationStrategy using {0}", as);
-        if (this.activationStrategy == ActivationStrategy.CLASS_INSTRUMENTATION && loadAgent) {
-            TransparentDirtyDetectorAgent.initialize();
-        }
         return this;
     }
     
@@ -118,19 +129,19 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * Retorna el factory inicializado por el SessionManager
      * @return 
      */
-    OrientGraphFactory getFactory() {
-        return this.factory;
-    }
+	/*
+	 * OrientGraphFactory getFactory() { return this.factory; }
+	 */
     
     /**
      * Inicia una transacción contra el servidor.
      */
     public void begin() {
-        if (this.publicTransaction == null) {
+        if (this.transaction == null) {
             // si no hay una transacción creada, abrir una...
-            publicTransaction = getTransaction();
+            transaction = getTransaction();
         } else {
-            this.publicTransaction.begin();
+            this.transaction.begin();
         }
     }
 
@@ -152,7 +163,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @return publicTransaction
      */
     public Transaction getCurrentTransaction() {
-        return this.publicTransaction;
+        return this.transaction;
     }
     
     /**
@@ -163,7 +174,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      */
     @Override
     public synchronized <T> T store(T o) throws IncorrectRIDField, NoOpenTx, ClassToVertexNotFound {
-        return this.publicTransaction.store(o);
+        return this.transaction.store(o);
     }
 
     /**
@@ -172,7 +183,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @param toRemove referencia al objeto a remover
      */
     public void delete(Object toRemove) throws ReferentialIntegrityViolation, UnknownObject {
-        this.publicTransaction.delete(toRemove);
+        this.transaction.delete(toRemove);
     }
     
     
@@ -182,7 +193,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @param o objeto de referencia.
      */
     public synchronized void setAsDirty(Object o) throws UnmanagedObject {
-        this.publicTransaction.setAsDirty(o);
+        this.transaction.setAsDirty(o);
     }
 
     /**
@@ -203,7 +214,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      */
     public String getRID(Object o) {
         if ((o != null) && (o instanceof IObjectProxy)) {
-            return ((IObjectProxy) o).___getVertex().getId().toString();
+            return ((IObjectProxy) o).___getVertex().getIdentity().toString();
         }
         return null;
     }
@@ -215,7 +226,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @throws OdbogmException Si ocurre alguna otra excepción de la base de datos.
      */
     public synchronized void commit() throws ConcurrentModification, OdbogmException {
-        this.publicTransaction.commit();
+        this.transaction.commit();
     }
 
     /**
@@ -223,7 +234,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      */
     public synchronized void flush() {
         
-        this.publicTransaction.flush();
+        this.transaction.flush();
     }
 
     /**
@@ -231,7 +242,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * Los objetos marcados como Dirty forman parte del siguiente commit
      */
     public synchronized void refreshDirtyObjects() {
-        this.publicTransaction.refreshDirtyObjects();
+        this.transaction.refreshDirtyObjects();
     }
 
     
@@ -242,7 +253,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @param o objeto recuperado de la base a ser actualizado.
      */
     public synchronized void refreshObject(IObjectProxy o) {
-        this.publicTransaction.refreshObject(o);
+        this.transaction.refreshObject(o);
     }
     
     
@@ -250,40 +261,41 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * realiza un rollback sobre la transacción activa.
      */
     public synchronized void rollback() {
-        this.publicTransaction.rollback();
+        this.transaction.rollback();
     }
 
     /**
      * Finaliza la comunicación con la base. 
      * Todas las transacciones abiertas son ROLLBACK y finalizadas.
      */
-    public void shutdown() {
-        this.factory.close();
-    }
-
+	
+	  public void shutdown() {
+		  System.out.println("shut down ");
+		  }
+	 
     /**
      * Devuelve un objeto de comunicación con la base.
      *
      * @return retorna la referencia directa al driver del la base.
      */
-    public OrientGraph getGraphdb() {
-        return this.factory.getTx();
-    }
+	/*
+	 * public OrientGraph getGraphdb() { return this.factory.getTx(); }
+	 */
     
     /**
      * Devuelve un objeto de comunicación con la base sin transacciones.
      * @return 
      */
-    public OrientGraphNoTx getGraphdbNoTx() {
-        return this.factory.getNoTx();
-    }
+	/*
+	 * public OrientGraphNoTx getGraphdbNoTx() { return this.factory.getNoTx(); }
+	 */
 
     /**
      * Retorna la cantidad de objetos marcados como Dirty. Utilizado para los test
      * @return retorna la cantidad de objetos marcados para el próximo commit
      */
     public int getDirtyCount() {
-        return this.publicTransaction.getDirtyCount();
+        return this.transaction.getDirtyCount();
     }
 
     
@@ -295,7 +307,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      */
     @Override
     public Object get(String rid) throws UnknownRID, VertexJavaClassNotFound {
-        return this.publicTransaction.get(rid);
+        return this.transaction.get(rid);
     }
 
     
@@ -310,13 +322,13 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      */
     @Override
     public <T> T get(Class<T> type, String rid) throws UnknownRID {
-        return this.publicTransaction.get(type, rid);
+        return this.transaction.get(type, rid);
     }
     
     
     @Override
-    public <T> T getEdgeAsObject(Class<T> type, OrientEdge e) {
-        return this.publicTransaction.getEdgeAsObject(type, e);
+    public <T> T getEdgeAsObject(Class<T> type, OEdge e) {
+        return this.transaction.getEdgeAsObject(type, e);
     }
 
     /**
@@ -326,7 +338,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @return resutado de la ejecución de la sentencia SQL
      */
     public ODBOrientDynaElementIterable query(String sql) {
-        return this.publicTransaction.query(sql);
+        return this.transaction.query(sql);
     }
 
     /**
@@ -340,7 +352,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      */
     public long query(String sql, String retVal) {
         
-        return this.publicTransaction.query(sql, retVal);
+        return this.transaction.query(sql, retVal);
     }
 
     /**
@@ -351,7 +363,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @return resutado de la ejecución de la sentencia SQL
      */
     public ODBOrientDynaElementIterable query(String sql, Object... param) {
-        return this.publicTransaction.query(sql, param);
+        return this.transaction.query(sql, param);
     }
     
     /**
@@ -363,7 +375,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @return return a list of object of the refecence class.
      */
     public <T> List<T> query(Class<T> clazz) {
-        return this.publicTransaction.query(clazz);
+        return this.transaction.query(clazz);
     }
 
     /**
@@ -375,7 +387,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @return Lista con todos los objetos recuperados.
      */
     public <T> List<T> query(Class<T> clase, String body) {
-        return this.publicTransaction.query(clase, body);
+        return this.transaction.query(clase, body);
     }
 
     /**
@@ -389,7 +401,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      */
     public <T> List<T> query(Class<T> clase, String sql, Object... param) {
         
-        return this.publicTransaction.query(clase, sql, param);
+        return this.transaction.query(clase, sql, param);
     }
 
     /**
@@ -414,7 +426,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @return una lista de la clase solicitada con los objetos lazy inicializados.
      */
     public <T> List<T> query(Class<T> clase, String sql, HashMap<String,Object> param) {
-        return this.publicTransaction.query(clase, sql, param);
+        return this.transaction.query(clase, sql, param);
     }
     
     
@@ -426,7 +438,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @return OClass o null si la clase no existe
      */
     public OClass getDBClass(String clase) {
-        return this.publicTransaction.getDBClass(clase);
+        return this.transaction.getDBClass(clase);
     }
 
     /**
@@ -435,7 +447,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @param user UserSID String only.
      */
     public void setAuditOnUser(String user) {
-        this.publicTransaction.setAuditOnUser(user);
+        this.transaction.setAuditOnUser(user);
     }
 
     /**
@@ -443,7 +455,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      *
      */
     public void setAuditOnUser() throws NoUserLoggedIn {
-        this.publicTransaction.setAuditOnUser();
+        this.transaction.setAuditOnUser();
     }
 
     /**
@@ -464,8 +476,8 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @param data objeto a loguear con un toString
      */
     public void auditLog(IObjectProxy o, int at, String label, Object data) {
-        if (this.publicTransaction.isAuditing()) {
-            this.publicTransaction.auditLog(o, at, label, data);
+        if (this.transaction.isAuditing()) {
+            this.transaction.auditLog(o, at, label, data);
         }
     }
 
@@ -474,11 +486,11 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * @return true Si la auditoría está activa.
      */
     public boolean isAuditing() {
-        return this.publicTransaction.isAuditing();
+        return this.transaction.isAuditing();
     }
     
     Auditor getAuditor() {
-        return this.publicTransaction.getAuditor();
+        return this.transaction.getAuditor();
     }
     
     public UserSID getLoggedInUser() {
@@ -496,5 +508,14 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
     public int openTransactionsCount() {
         return (int)openTransactionsList.stream().filter(w -> w.get() != null).count();
     }
+
+	ODatabaseSession getConnection() {
+		try {
+			Connection connection = this.datasource.getConnection();
+			return (ODatabaseSession) connection.unwrap(OrientJdbcConnection.class).getDatabase();
+		} catch (SQLException e) {
+			throw new RuntimeException(e.getCause());
+		}
+	}
     
 }

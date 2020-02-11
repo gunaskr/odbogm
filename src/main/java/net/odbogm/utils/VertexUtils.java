@@ -5,8 +5,12 @@
  */
 package net.odbogm.utils;
 
+import com.google.common.collect.Iterators;
+import com.orientechnologies.orient.core.record.ODirection;
+import com.orientechnologies.orient.core.record.OVertex;
 import com.tinkerpop.blueprints.Direction;
 import com.tinkerpop.blueprints.Edge;
+import com.tinkerpop.blueprints.impls.orient.OrientEdge;
 import com.tinkerpop.blueprints.impls.orient.OrientVertex;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -53,17 +57,32 @@ public class VertexUtils {
      * @param edgeLabel edge label to test. Null to test any label.
      * @return true if a conection exist
      */
-    public static boolean isConectedTo(OrientVertex v1, OrientVertex v2, String edgeLabel) {
+    public static boolean isConectedTo(OVertex v1, OVertex v2, String edgeLabel) {
         boolean connected = false;
-        LOGGER.log(Level.FINER, "Verificando edges entre "+v1.getId()+" y "+v2.getId()+ " a través de la realción "+edgeLabel);
+        LOGGER.log(Level.FINER, "Verificando edges entre "+v1.getIdentity().toString()+" y "+v2.getIdentity().toString()+ " a través de la realción "+edgeLabel);
         if ((v1 != null)&&(v2 != null)) {
-            Iterable<Edge> result = v1.getEdges(v2, Direction.OUT, edgeLabel==null?"E":edgeLabel);
+        	Iterable<OVertex> vertices = v1.getVertices(ODirection.OUT);
+        	for(OVertex v: vertices) {
+        		if(v.equals(v2)) {
+        			connected = true;
+        			break;
+        		}
+        	}
+            /*Iterable<OEdge> result = v1.getEdges(v2, Direction.OUT, edgeLabel==null?"E":edgeLabel);
             for (Edge e : result) {
                 LOGGER.log(Level.FINER, "Conectados por el edge: "+e.getId());
                 connected = true;
                 break;
-            }
+            }*/
         }
         return connected;
+    }
+    
+    public static int getEdgeCountOfVertex(OVertex vertex, ODirection direction) {
+    	return Iterators.size(vertex.getEdges(direction).iterator());
+    }
+    
+    public static int getEdgeCountOfVertex(OVertex vertex, ODirection direction, String relationsShipNmae) {
+    	return Iterators.size(vertex.getEdges(direction, relationsShipNmae).iterator());
     }
 }

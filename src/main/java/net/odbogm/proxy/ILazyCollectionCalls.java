@@ -5,6 +5,8 @@
  */
 package net.odbogm.proxy;
 
+import com.orientechnologies.orient.core.record.ODirection;
+import com.orientechnologies.orient.core.record.OVertex;
 import com.tinkerpop.blueprints.Direction;
 import com.tinkerpop.blueprints.impls.orient.OrientVertex;
 import java.util.Map;
@@ -25,7 +27,7 @@ public interface ILazyCollectionCalls extends ILazyCalls {
      * @param d         Si es OUT, se notifican los cambios. Si es IN, se toma como una colección 
      *                  indirecta y SE IGNORAN LOS CAMBIOS.
      */
-    public void init(Transaction sm, OrientVertex relatedTo, IObjectProxy parent, String field, Class<?> c, Direction d);
+    public void init(Transaction sm, OVertex relatedTo, IObjectProxy parent, String field, Class<?> c, ODirection d);
     public Map<Object,ObjectCollectionState> collectionState();
     
 }

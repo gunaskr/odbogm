@@ -1,12 +1,5 @@
 package net.odbogm.proxy;
 
-import com.orientechnologies.common.exception.OException;
-import com.tinkerpop.blueprints.Direction;
-import com.tinkerpop.blueprints.Edge;
-import com.tinkerpop.blueprints.Vertex;
-import com.tinkerpop.blueprints.impls.orient.OrientEdge;
-import com.tinkerpop.blueprints.impls.orient.OrientElement;
-import com.tinkerpop.blueprints.impls.orient.OrientVertex;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collection;
@@ -15,6 +8,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import com.google.common.collect.Iterators;
+import com.orientechnologies.common.exception.OException;
+import com.orientechnologies.orient.core.id.ORID;
+import com.orientechnologies.orient.core.record.ODirection;
+import com.orientechnologies.orient.core.record.OEdge;
+import com.orientechnologies.orient.core.record.OElement;
+import com.orientechnologies.orient.core.record.OVertex;
+import com.tinkerpop.blueprints.Direction;
+import com.tinkerpop.blueprints.Vertex;
+import com.tinkerpop.blueprints.impls.orient.OrientVertex;
+
 import net.odbogm.LogginProperties;
 import net.odbogm.ObjectMapper;
 import net.odbogm.ObjectStruct;
@@ -56,7 +61,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
 
     // Vértice desde el que se obtiene el objeto.
     // private OrientVertex baseVertex;
-    private OrientElement ___baseElement;
+    private OElement ___baseElement;
 
     // permite marcar el objeto como inválida en caso que se haga un rollback 
     // sobre un objeto que nunca se persistió.
@@ -78,7 +83,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
     private boolean ___deletedMark = false;
 
 
-    public ObjectProxy(Class c, OrientElement e, Transaction t) {
+    public ObjectProxy(Class c, OElement e, Transaction t) {
         this.___baseClass = c;
         this.___baseElement = e;
         this.___transaction = t;
@@ -225,22 +230,22 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                             ReflectionUtils.findMethod(this.___baseClass, "toString", (Class<?>[]) null);
                             res = methodProxy.invokeSuper(o, args);
                         } catch (NoSuchMethodException nsme) {
-                            res = this.___baseElement.getId().toString();
+                            res = this.___baseElement.getIdentity().toString();
                         }
                     } else {
                         LOGGER.log(Level.FINEST, "invocando: " + method.getName());
                         res = methodProxy.invokeSuper(o, args);
                     }
 
-                    // verificar si hay diferencias entre los objetos dependiendo de la estrategia seleccionada.
+                    // Check if there are differences between the objects depending on the selected strategy.
                     if (this.___objectReady) {
                         switch (this.___transaction.getSessionManager().getActivationStrategy()) {
                             case CLASS_INSTRUMENTATION:
-                                // si se está usando la instrumentación de clase, directamente verificar en el objeto
-                                // cual es su estado.
+                                // if class instrumentation is being used, directly check on the object
+                                // What is your status?
                                 LOGGER.log(Level.FINEST, "o: " + o.getClass().getName() + " ITrans: " + (o instanceof ITransparentDirtyDetector));
                                 if (((ITransparentDirtyDetector) o).___ogm___isDirty()) {
-                                    LOGGER.log(Level.FINEST, "objeto {0} marcado como dirty por ASM. Agregarlo a la lista de pendientes.", o.getClass().getName());
+                                    LOGGER.log(Level.FINEST, "objeto {0} marked as dirty by ASM. Add it to the pending list.", o.getClass().getName());
                                     this.___setDirty();
                                 }
                         }
@@ -249,7 +254,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                     break;
             }
         } else {
-            throw new ObjectMarkedAsDeleted("The object " + this.___baseElement.getId().toString() + " was deleted from the database. Trying to call to " + method.getName());
+            throw new ObjectMarkedAsDeleted("The object " + this.___baseElement.getIdentity().toString() + " was deleted from the database. Trying to call to " + method.getName());
         }
         // AFTER
         // print how long it took to execute the method on the proxified object
@@ -277,7 +282,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
         ClassDef classdef = ___transaction.getObjectMapper().getClassDef(___baseClass);
         if (classdef.ridField != null) {
             try {
-                classdef.ridField.set(___proxiedObject, ___baseElement.getId().toString());
+                classdef.ridField.set(___proxiedObject, ___baseElement.getIdentity().toString());
             } catch (IllegalArgumentException | IllegalAccessException ex) {
                 LOGGER.log(Level.WARNING, "Couldn't inject RID in proxy.", ex);
             }
@@ -292,9 +297,9 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
      * @return referencia al OrientVertex
      */
     @Override
-    public OrientVertex ___getVertex() {
-        if (this.___baseElement.getElementType().equals("Vertex")) {
-            return (OrientVertex) this.___baseElement;
+    public OVertex ___getVertex() {
+        if (this.___baseElement instanceof OVertex) {
+            return (OVertex) this.___baseElement;
         } else {
             return null;
         }
@@ -308,9 +313,9 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
      * @return el RID del object en la base
      */
     @Override
-    public String ___getRid() {
+    public ORID ___getRid() {
         if (this.___baseElement != null) {
-            return this.___baseElement.getId().toString();
+            return this.___baseElement.getIdentity();
         } else {
             return null;
         }
@@ -324,21 +329,20 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
      * @param v vétice de referencia
      */
     @Override
-    public void ___setVertex(OrientVertex v) {
+    public void ___setVertex(OVertex v) {
         this.___baseElement = v;
     }
 
 
     /**
-     * retorna el vértice asociado a este proxi o null en caso que no exista
-     * uno.
+     * returns the vertex associated with this proxy or null in case there is none.
      *
-     * @return la referencia al OrientVertex
+     * @return the reference to the OVertex
      */
     @Override
-    public OrientVertex ___getEdge() {
-        if (this.___baseElement.getElementType().equals("Edge")) {
-            return (OrientVertex) this.___baseElement;
+    public OVertex ___getEdge() {
+        if (this.___baseElement instanceof OEdge) {
+            return (OVertex) this.___baseElement;
         } else {
             return null;
         }
@@ -352,7 +356,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
      * @param e Edge de referencia
      */
     @Override
-    public void ___setEdge(OrientEdge e) {
+    public void ___setEdge(OEdge e) {
         this.___baseElement = e;
     }
 
@@ -470,7 +474,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
         if (this.___baseElement instanceof OrientVertex) {
             boolean preservDirtyState = this.___dirty;
 
-            OrientVertex ov = (OrientVertex) this.___baseElement;
+            OVertex ov = (OVertex) this.___baseElement;
             ClassDef classdef = this.___transaction.getObjectMapper().getClassDef(this.___proxiedObject);
 
             // hidratar los atributos @indirectLinks
@@ -486,14 +490,14 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                     // se debe usar el nombre de la relación propuesto por la anotation
                     Indirect in = fLink.getAnnotation(Indirect.class);
                     String graphRelationName = in.linkName();
-                    Direction direction = Direction.IN;
+                    ODirection direction = ODirection.IN;
                     LOGGER.log(Level.FINER, "Se ha detectado un indirect. Linkname = {0}", new Object[]{in.linkName()});
                     LOGGER.log(Level.FINER, "Field: {0}.{1}   Class: {2}  RelationName: {3}", new String[]{this.___baseClass.getSimpleName(), field, fc.getSimpleName(), graphRelationName});
 
                     // recuperar de la base el vértice correspondiente
                     boolean duplicatedLinkGuard = false;
-                    for (Vertex vertice : ov.getVertices(direction, graphRelationName)) {
-                        LOGGER.log(Level.FINER, "hydrate innerO: " + vertice.getId());
+                    for (OVertex vertice : ov.getVertices(direction, graphRelationName)) {
+                        LOGGER.log(Level.FINER, "hydrate innerO: " + vertice.getIdentity());
 
                         if (!duplicatedLinkGuard) {
 //                        Object innerO = this.hydrate(fc, vertice);
@@ -509,7 +513,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                             // si es una interface llamar a get solo con el RID.
                             Object innerO = null;
 
-                            innerO = fc.isInterface() ? this.___transaction.get(vertice.getId().toString()) : this.___transaction.get(fc, vertice.getId().toString());
+                            innerO = fc.isInterface() ? this.___transaction.get(vertice.getIdentity().toString()) : this.___transaction.get(fc, vertice.getIdentity().toString());
 
                             LOGGER.log(Level.FINER, "Inner object " + field + ": "
                                     + (innerO == null ? "NULL" : "" + innerO.toString())
@@ -523,7 +527,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                         } else if (false) {
                             throw new DuplicateLink();
                         }
-                        LOGGER.log(Level.FINER, "FIN hydrate innerO: " + vertice.getId() + "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+                        LOGGER.log(Level.FINER, "FIN hydrate innerO: " + vertice.getIdentity() + "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
                     }
                 } catch (SecurityException | IllegalArgumentException | IllegalAccessException ex) {
                     Logger.getLogger(ObjectMapper.class.getName()).log(Level.SEVERE, null, ex);
@@ -544,13 +548,14 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                     LOGGER.log(Level.FINER, "Field: {0}   Class: {1}", new String[]{field, fc.getName()});
 
                     Field fLink = classdef.fieldsObject.get(field);
-                    Direction relationDirection = Direction.IN;
+                    ODirection relationDirection = ODirection.IN;
 
                     Indirect in = fLink.getAnnotation(Indirect.class);
                     String graphRelationName = in.linkName();
 
-                    // si hay Vértices conectados o si el constructor del objeto ha inicializado los vectores, convertirlos
-                    if ((ov.countEdges(relationDirection, graphRelationName) > 0) || (fLink.get(___proxiedObject) != null)) {
+                    // if there are connected vertices or if the object's constructor has initialized the vectors, convert them
+                    if ((Iterators.size(ov.getEdges(relationDirection, graphRelationName).iterator()) > 0) || (fLink.get(___proxiedObject) != null)) {
+                    	
                         this.___transaction.getObjectMapper().colecctionToLazy(___proxiedObject, field, fc, ov, ___transaction);
                     }
 
@@ -597,9 +602,9 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
     @Override
     public void ___removeDirtyMark() {
         this.___dirty = false;
-        // verificar la estrategia de activación.
-        // si la estrategia es ONCOMMIT se debe validar primero que existan cambios en los objetos
-        // antes de proceder.
+        // Verify the activation strategy.
+        // if the strategy is ONCOMMIT, it must be validated first that there are changes in the objects
+        // before proceeding.
         if (this.___transaction.getSessionManager().getActivationStrategy() == SessionManager.ActivationStrategy.CLASS_INSTRUMENTATION) {
             LOGGER.log(Level.FINER, "CLASS_INSTRUMENTATION Strategy.");
             ((ITransparentDirtyDetector) this.___proxiedObject).___ogm___setDirty(false);
@@ -614,7 +619,8 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
         try {
             doCommit();
         } catch (OException ex) {
-            throw new OdbogmException(ex, ___transaction);
+        	throw ex;
+            //throw new OdbogmException(ex, ___transaction);
         }
     }
     
@@ -627,46 +633,56 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
         if (this.___dirty || this.___baseElement.getIdentity().isNew()) {
             this.___transaction.initInternalTx();
 
-            // asegurarse que está atachado
-            if (this.___baseElement.getGraph() == null) {
+            // make sure you are attached
+            // may be we do not need this.
+            /*if (this.___baseElement.getGraph() == null) {
                 LOGGER.log(Level.FINER, "El objeto no está atachado!");
                 this.___transaction.attach(this.___baseElement);
-            }
+            }*/
+            //this.___baseElement.save();
 
-            // obtener la definición de la clase
+            // get the class definition
             ClassDef cDef = this.___transaction.getObjectMapper().getClassDef(this.___proxiedObject);
 
-            // obtener un mapa actualizado del objeto contenido
+            // get an updated map of the contained object
             ObjectStruct oStruct = this.___transaction.getObjectMapper().objectStruct(this.___proxiedObject);
             Map<String, Object> omap = oStruct.fields;
 
-            // bajar todo al vértice
-            this.___baseElement.setProperties(omap);
+            // add everything to the vertex
+            // trying to cast to oelement to orientelement to use set properties as is.
+            for(Map.Entry<String, Object> mapEntry: omap.entrySet()) {
+            	this.___baseElement.setProperty(mapEntry.getKey(), mapEntry.getValue());
+            }
+            //((OElement)this.___baseElement).setProperties(omap);
             oStruct.removedProperties.forEach(prop -> this.___baseElement.removeProperty(prop));
 
-            // guardar log de auditoría si corresponde.
-            if (this.___transaction.isAuditing() && !this.___baseElement.getIdentity().isNew()) {
+            // save audit log if applicable.
+            /*if (this.___transaction.isAuditing() && !this.___baseElement.getIdentity().isNew()) {
                 this.___transaction.auditLog(this, AuditType.WRITE, "UPDATE", omap);
-            }
+            }*/
 
-            // si se trata de un Vértice
-            if (this.___baseElement.getElementType().equals("Vertex")) {
-                OrientVertex ov = (OrientVertex) this.___baseElement;
-                // Analizar si cambiaron los vértices
+            // if it is a vertex
+            if (this.___baseElement instanceof OVertex) {
+            	OVertex ov = (OVertex) this.___baseElement;
+                // Analyze if the vertices changed
                 /*
-                 * procesar los objetos internos. Primero se deber determinar
-                 * si los objetos ya existían en el contexto actual. Si no
-                 * existen deben ser creados.
+                 * Process internal objects. First it must be determined
+                 * if the objects already existed in the current context. If not
+                 * They exist must be created.
                  */
                 for (Map.Entry<String, Class<?>> link : cDef.links.entrySet()) {
                     String field = link.getKey();
                     String graphRelationName = cDef.entityName + "_" + field;
-                    // determinar el estado del campo
+                    // determine field status
                     if (oStruct.links.get(field) == null) {
-                        // si está en null, es posible que se haya eliminado el objeto
-                        // por lo cual se debería eliminar el vértice correspondiente
-                        // si es que existe
-                        if (ov.countEdges(Direction.OUT, graphRelationName) > 0) {
+                        // if it is null, the object may have been deleted
+                        // therefore the corresponding vertex should be removed
+                        // if it exists
+                    	Iterable<OEdge> edges = ov.getEdges(ODirection.OUT,graphRelationName);
+                    	for(OEdge edge: ov.getEdges(ODirection.OUT, graphRelationName)) {
+                    		this.removeEdge(edge, field);
+                    	}
+                        /*if (ov.countEdges(Direction.OUT, graphRelationName) > 0) {
                             // se ha eliminado el objeto y debe ser removido el Vértice o el Edge correspondiente
                             OrientEdge removeEdge = null;
                             for (Edge edge : ov.getEdges(Direction.OUT, graphRelationName)) {
@@ -677,22 +693,26 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                                 }
                                 this.removeEdge(removeEdge, field);
                             }
-                        }
+                        }*/
                     } else {
                         Object innerO = oStruct.links.get(field);
-                        // verificar si ya está en el contexto. Si fue creado en forma 
-                        // separada y asociado con el objeto principal, se puede dar el caso
-                        // de que el objeto principal tiene RID y el agregado no.
+                        // Check if it is already in context. If it was created fit
+                        // separated and associated with the main object, it may be the case
+                        // that the main object has RID and the aggregate does not.
                         if (innerO instanceof IObjectProxy) {
-                            // el objeto existía.
-                            // se debe verificar si el eje entre los dos objetos ya existía.
+                            // The object existed.
+                            // It should be checked if the axis between the two objects already existed.
                             if (!VertexUtils.isConectedTo(ov, ((IObjectProxy) innerO).___getVertex(), graphRelationName)) {
-                                // No existe un eje. Se debe crear
+                                // There is no axis. It must be created
                                 LOGGER.log(Level.FINER, "Los objetos no están conectados. ({0} |--|{1}",
-                                        new Object[]{ov.getId(), ((IObjectProxy) innerO).___getVertex().getId()});
-
-                                // primero verificar si no existía una relación previa con otro objeto para removerla.
-                                if (ov.countEdges(Direction.OUT, graphRelationName) > 0) {
+                                        new Object[]{ov.getIdentity(), ((IObjectProxy) innerO).___getVertex().getIdentity()});
+                                
+                                // First check if there was no previous relationship with another object to remove it.
+                                Iterable<OEdge> edges = ov.getEdges(ODirection.OUT,graphRelationName);
+                            	for(OEdge edge: ov.getEdges(ODirection.OUT, graphRelationName)) {
+                            		this.removeEdge(edge, field);
+                            	}
+                                /*if (ov.countEdges(Direction.OUT, graphRelationName) > 0) {
                                     LOGGER.log(Level.FINER, "Existía una relación previa. Se debe eliminar.");
                                     // existé una relación. Elimnarla antes de proceder a establecer la nueva.
                                     OrientEdge removeEdge = null;
@@ -706,17 +726,22 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
 
                                         this.removeEdge(removeEdge, field);
                                     }
-                                }
+                                }*/
                                 LOGGER.log(Level.FINER, "Agregar un link entre dos objetos existentes.");
-                                OrientEdge oe = this.___transaction.getSessionManager().getGraphdb().addEdge("class:" + graphRelationName, ov, ((IObjectProxy) innerO).___getVertex(), graphRelationName);
+                                //OrientEdge oe = this.___transaction.getSessionManager().getGraphdb().addEdge("class:" + graphRelationName, ov, ((IObjectProxy) innerO).___getVertex(), graphRelationName);
+                                OEdge oe = this.___transaction.getSessionManager().getTransaction().getODatabaseSession().newEdge(ov, ((IObjectProxy) innerO).___getVertex(), graphRelationName);
                                 if (this.___transaction.isAuditing()) {
                                     this.___transaction.auditLog(this, AuditType.WRITE, "ADD LINK: " + graphRelationName, oe);
                                 }
                             }
                         } else {
-                            // el objeto es nuevo
-                            // primero verificar si no existía una relación previa con otro objeto para removerla.
-                            if (ov.countEdges(Direction.OUT, graphRelationName) > 0) {
+                            // the object is new
+                            // First check if there was no previous relationship with another object to remove it.
+                        	Iterable<OEdge> edges = ov.getEdges(ODirection.OUT,graphRelationName);
+                        	for(OEdge edge: ov.getEdges(ODirection.OUT, graphRelationName)) {
+                        		this.removeEdge(edge, field);
+                        	}
+                            /*if (ov.countEdges(Direction.OUT, graphRelationName) > 0) {
                                 LOGGER.log(Level.FINER, "Existía una relación previa. Se debe eliminar.");
                                 // existé una relación. Elimnarla antes de proceder a establecer la nueva.
                                 OrientEdge removeEdge = null;
@@ -728,19 +753,19 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                                     }
                                     this.removeEdge(removeEdge, field);
                                 }
-                            }
+                            }*/
 
-                            // crear la nueva relación
+                            // create the new relationship
                             LOGGER.log(Level.FINER, "innerO nuevo. Crear un vértice y un link");
                             innerO = this.___transaction.store(innerO);
                             this.___transaction.getObjectMapper().setFieldValue(this.___proxiedObject, field, innerO);
 
-                            // si está activa la instrumentación de clases, desmarcar el objeto como dirty
+                            // if class instrumentation is active, uncheck the object as dirty
                             if (innerO instanceof ITransparentDirtyDetector) {
                                 ((ITransparentDirtyDetector) innerO).___ogm___setDirty(false);
                             }
 
-                            OrientEdge oe = this.___transaction.getCurrentGraphDb().addEdge("class:" + graphRelationName, ov, ((IObjectProxy) innerO).___getVertex(), graphRelationName);
+                            OEdge oe = this.___transaction.getODatabaseSession().newEdge(ov, ((IObjectProxy) innerO).___getVertex(), graphRelationName);
                             if (this.___transaction.isAuditing()) {
                                 this.___transaction.auditLog(this, AuditType.WRITE, "ADD LINK: " + graphRelationName, oe);
                             }
@@ -824,7 +849,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                                         }
 
                                         // vincular el nodo
-                                        OrientEdge oe = this.___transaction.getCurrentGraphDb().addEdge("class:" + graphRelationName, this.___getVertex(), ((IObjectProxy) colObject).___getVertex(), graphRelationName);
+                                        OEdge oe = this.___transaction.getODatabaseSession().newEdge( this.___getVertex(), ((IObjectProxy) colObject).___getVertex(), graphRelationName);
 
                                         if (this.___transaction.isAuditing()) {
                                             this.___transaction.auditLog(this, AuditType.WRITE, "LINKLIST ADD: " + graphRelationName, oe);
@@ -832,14 +857,23 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                                     }
                                 }
 
-                                // procesar los removidos solo si está el anotation en el campo
+                                // process removals only if the annotation is in the field
                                 for (Map.Entry<Object, ObjectCollectionState> entry1 : colState.entrySet()) {
                                     Object colObject = entry1.getKey();
                                     ObjectCollectionState colObjState = entry1.getValue();
 
                                     if (colObjState == ObjectCollectionState.REMOVED) {
                                         // remover el link
-                                        for (Edge edge : ((OrientVertex) this.___baseElement)
+                                    	Iterable<OEdge> edges = ((OVertex) this.___baseElement).getEdges(ODirection.OUT, graphRelationName);
+                                    	
+                                    	for(OEdge edge: edges) {
+                                    		if(edge.getTo().equals(((IObjectProxy) colObject).___getVertex())) {
+                                    			edge.detach();
+                                    		}
+                                    	}
+                                    	
+                                    	
+                                        /*for (Edge edge : ((OVertex) this.___baseElement)
                                                 .getEdges(((IObjectProxy) colObject).___getVertex(),
                                                         Direction.OUT,
                                                         graphRelationName)) {
@@ -847,7 +881,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                                                 this.___transaction.auditLog(this, AuditType.WRITE, "LINKLIST REMOVE: " + graphRelationName, edge);
                                             }
                                             edge.remove();
-                                        }
+                                        }*/
                                         // si existe la anotación, remover tambien el vertex
                                         if (f.isAnnotationPresent(RemoveOrphan.class)) {
                                             if (this.___transaction.isAuditing()) {
@@ -883,7 +917,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
 
                                 // refrescar los estados
                                 final Map<Object, ObjectCollectionState> keysState = ((ILazyMapCalls) mapFieldValue).collectionState();
-                                final Map<Object, OrientEdge> keysToEdges = ((ILazyMapCalls) mapFieldValue).getKeyToEdge();
+                                final Map<Object, OEdge> keysToEdges = ((ILazyMapCalls) mapFieldValue).getKeyToEdge();
                                 final Map<Object, ObjectCollectionState> entitiesState = ((ILazyMapCalls) mapFieldValue).getEntitiesState();
 
                                 // recorrer todas las claves del mapa
@@ -905,17 +939,21 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                                         }
                                     }
 
-                                    OrientEdge oe;
-                                    // verificar el estado del objeto en la colección.
+                                    OEdge oe;
+                                    // check the status of the object in the collection.
                                     switch (keyState) {
                                         case ADDED:
-                                            // crear un link entre los dos objetos.
+                                            // Create a link between the two objects.
                                             LOGGER.log(Level.FINER, "-----> agregando un LinkList al Map!");
-                                            oe = this.___transaction.getCurrentGraphDb().addEdge("class:" + graphRelationName,
-                                                    (OrientVertex) this.___baseElement, ((IObjectProxy) linkedO).___getVertex(),
+                                            oe = this.___transaction.getODatabaseSession().newEdge(
+                                                    (OVertex) this.___baseElement, ((IObjectProxy) linkedO).___getVertex(),
                                                     graphRelationName);
-                                            // actualizar el edge con los datos de la key.
-                                            oe.setProperties(this.___transaction.getObjectMapper().simpleMap(key));
+                                            // update the edge with the key data.
+										Map<String, Object> simpleMap = this.___transaction.getObjectMapper().simpleMap(key);
+										for(Map.Entry<String, Object> mapEntry: simpleMap.entrySet()) {
+											oe.setProperty(mapEntry.getKey(), mapEntry.getValue());
+										}
+										//oe.setProperties(simpleMap);
 
                                             if (this.___transaction.isAuditing()) {
                                                 this.___transaction.auditLog(this, AuditType.WRITE, "LINKLIST ADD: " + graphRelationName, oe);
@@ -928,7 +966,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
 
                                         case REMOVED:
                                             // quitar el Edge
-                                            OrientEdge oeRemove = keysToEdges.get(key);
+                                            OEdge oeRemove = keysToEdges.get(key);
                                             if (this.___transaction.isAuditing()) {
                                                 this.___transaction.auditLog(this, AuditType.WRITE, "LINKLIST REMOVE: " + graphRelationName, oeRemove);
                                             }
@@ -936,9 +974,9 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                                                 throw new IllegalStateException("The edge object couldn't be found. "
                                                         + "Make sure its hashCode is change-proof.");
                                             }
-                                            oeRemove.remove();
-                                            // el link se ha removido. Se debe eliminar y verificar si corresponde borrar 
-                                            // el vértice en caso de estar marcado con @RemoveOrphan.
+                                            oeRemove.detach();
+                                            // The link has been removed. Delete and verify if applicable delete
+                                            // the vertex if it is marked with @RemoveOrphan.
                                             if (f.isAnnotationPresent(RemoveOrphan.class)) {
                                                 if (entitiesState.get(key) == ObjectCollectionState.REMOVED) {
                                                     this.___transaction.delete(entitiesState.get(key));
@@ -964,6 +1002,9 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                     }
                 }
             }
+            //moving the save here. Why not
+            //this.___baseElement.save();
+            //this.___transaction.getODatabaseSession().getTransaction().
             this.___transaction.closeInternalTx();
         }
         LOGGER.log(Level.FINER, "fin commit ----");
@@ -989,22 +1030,28 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
      * @param edgeToRemove
      * @param field
      */
-    private synchronized void removeEdge(OrientEdge edgeToRemove, String field) {
+    private synchronized void removeEdge(OEdge edgeToRemove, String field) {
         try {
             ClassDef classdef = this.___transaction.getObjectMapper().getClassDef(___baseClass);
             Field f = classdef.fieldsObject.get(field);
 //            Field f = ReflectionUtils.findField(this.___baseClass, field);
 
-            // En el Edge, IN proviene del objeto apuntado. Raro pero es así :(
-            String outRid = edgeToRemove.getInVertex().getIdentity().toString();
+            // In the Edge, IN comes from the targeted object. Rare but it is like that :(
+            
+            //String outRid = edgeToRemove.getInVertex().getIdentity().toString();
+            String outRid = edgeToRemove.getFrom().getIdentity().toString();
             LOGGER.log(Level.FINER, "El edge {0} apunta IN: {1} apunta OUT: {2}",
                     new Object[]{edgeToRemove,
-                        edgeToRemove.getInVertex().getIdentity().toString(),
-                        edgeToRemove.getOutVertex().getIdentity().toString()});
-            // remover primero el eje
-            edgeToRemove.remove();
+                        edgeToRemove.getFrom().getIdentity().toString(),
+                        edgeToRemove.getTo().getIdentity().toString()});
+            // first remove the shaft
+            //edgeToRemove.remove();
+            boolean detach = edgeToRemove.detach();
+            LOGGER.log(Level.INFO, "edge of id {0} is detached = {1}" , new Object[]{edgeToRemove.getIdentity().toString(),detach
+            		});
+            
 
-            // si corresponde
+            // if appropriate
             if (f.isAnnotationPresent(RemoveOrphan.class)) {
                 LOGGER.log(Level.FINER, "Remove orphan presente");
                 //auditar
@@ -1053,7 +1100,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
         // recargar todo.
         this.___baseElement.reload();
 
-        LOGGER.log(Level.FINER, "vmap: {0}", this.___baseElement.getProperties());
+        LOGGER.log(Level.FINER, "vmap: {0}", this.___baseElement.getPropertyNames());
         // restaurar los atributos al estado original.
         ObjectMapper objectMapper = this.___transaction.getObjectMapper();
         ClassDef classdef = objectMapper.getClassDef(this.___proxiedObject);

@@ -1,8 +1,10 @@
 package net.odbogm;
 
-import com.tinkerpop.blueprints.impls.orient.OrientEdge;
 import java.util.HashMap;
 import java.util.List;
+
+import com.orientechnologies.orient.core.record.OEdge;
+
 import net.odbogm.exceptions.IncorrectRIDField;
 import net.odbogm.exceptions.UnknownRID;
 import net.odbogm.exceptions.VertexJavaClassNotFound;
@@ -44,7 +46,7 @@ public interface IActions {
 
         <T> T get(Class<T> type, String rid) throws UnknownRID, VertexJavaClassNotFound;
         
-        public <T> T getEdgeAsObject(Class<T> type, OrientEdge e);
+        public <T> T getEdgeAsObject(Class<T> type, OEdge e);
     }
 
     public interface IQuery {

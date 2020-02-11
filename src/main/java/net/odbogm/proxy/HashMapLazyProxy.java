@@ -1,10 +1,5 @@
 package net.odbogm.proxy;
 
-import com.tinkerpop.blueprints.Direction;
-import com.tinkerpop.blueprints.Edge;
-import com.tinkerpop.blueprints.Vertex;
-import com.tinkerpop.blueprints.impls.orient.OrientEdge;
-import com.tinkerpop.blueprints.impls.orient.OrientVertex;
 import java.lang.ref.WeakReference;
 import java.util.Collection;
 import java.util.HashMap;
@@ -17,6 +12,13 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import com.orientechnologies.orient.core.record.ODirection;
+import com.orientechnologies.orient.core.record.OEdge;
+import com.orientechnologies.orient.core.record.OVertex;
+import com.tinkerpop.blueprints.Direction;
+import com.tinkerpop.blueprints.impls.orient.OrientEdge;
+
 import net.odbogm.LogginProperties;
 import net.odbogm.Primitives;
 import net.odbogm.Transaction;
@@ -41,11 +43,11 @@ public class HashMapLazyProxy extends HashMap<Object, Object> implements ILazyMa
     private boolean lazyLoading = false;
 
     private Transaction transaction;
-    private OrientVertex relatedTo;
+    private OVertex relatedTo;
     private String field;
     private Class<?> keyClass;
     private Class<?> valueClass;
-    private Direction direction;
+    private ODirection direction;
 
     // referencia debil al objeto padre. Se usa para notificar al padre que la colección ha cambiado.
     private WeakReference<IObjectProxy> parent;
@@ -60,7 +62,7 @@ public class HashMapLazyProxy extends HashMap<Object, Object> implements ILazyMa
      * @param v: clase del value.
      */
     @Override
-    public void init(Transaction t, OrientVertex relatedTo, IObjectProxy parent, String field, Class<?> k, Class<?> v, Direction d) {
+    public void init(Transaction t, OVertex relatedTo, IObjectProxy parent, String field, Class<?> k, Class<?> v, ODirection d) {
         this.transaction = t;
         this.relatedTo = relatedTo;
         this.parent = new WeakReference<>(parent);
@@ -73,7 +75,7 @@ public class HashMapLazyProxy extends HashMap<Object, Object> implements ILazyMa
     //********************* change control **************************************
     private Map<Object, ObjectCollectionState> entitiesState = new ConcurrentHashMap<>();
     private ConcurrentHashMap<Object, ObjectCollectionState> keyState = new ConcurrentHashMap<>();
-    private Map<Object, OrientEdge> keyToEdge = new ConcurrentHashMap<>();
+    private Map<Object, OEdge> keyToEdge = new ConcurrentHashMap<>();
 
     private synchronized void lazyLoad() {
         this.transaction.initInternalTx();
@@ -83,33 +85,33 @@ public class HashMapLazyProxy extends HashMap<Object, Object> implements ILazyMa
         this.lazyLoading = true;
 
         // recuperar todos los elementos desde el vértice y agregarlos a la colección
-        for (Iterator<Vertex> iterator = relatedTo.getVertices(this.direction, field).iterator(); iterator.hasNext();) {
-            OrientVertex next = (OrientVertex) iterator.next();
+        for (Iterator<OVertex> iterator = relatedTo.getVertices(this.direction, field).iterator(); iterator.hasNext();) {
+            OVertex next =  iterator.next();
             // LOGGER.log(Level.FINER, "loading: " + next.getId().toString());
             // el Lazy simpre se hace recuperado los datos desde la base de datos.
             Object o = null;
-            o = transaction.get(valueClass, next.getId().toString());
+            o = transaction.get(valueClass, next.getIdentity().toString());
             
             
-            // para cada vértice conectado, es necesario mapear todos los Edges que los unen.
-            for (Edge edge : relatedTo.getEdges(next, this.direction, field)) {
-                OrientEdge oe = (OrientEdge) edge;
+            // For each connected vertex, it is necessary to map all the Edges that join them.
+            //for (Edge edge : relatedTo.getEdges(next, this.direction, field)) {
+            for (OEdge edge : relatedTo.getEdges(this.direction, field)) {
                 Object k = null;
                 LOGGER.log(Level.FINER, "edge keyclass: {0}  OE RID:{1}",
-                        new Object[]{this.keyClass, oe.getId().toString()});
-                // si el keyClass no es de tipo nativo, hidratar un objeto.
+                        new Object[]{this.keyClass, edge.getIdentity().toString()});
+                // If the keyClass is not native, hydrate an object.
                 if (Primitives.PRIMITIVE_MAP.containsKey(this.keyClass)) {
                     LOGGER.log(Level.FINER, "primitive!!");
-                    for (String prop : oe.getPropertyKeys()) {
-                        k = oe.getProperty(prop);
+                    for (String prop : edge.getPropertyNames()) {
+                        k = edge.getProperty(prop);
                     }
                 } else {
                     LOGGER.log(Level.FINER, "clase como key");
-                    k = transaction.getEdgeAsObject(keyClass, oe);
+                    k = transaction.getEdgeAsObject(keyClass, edge);
                 }
                 this.put(k, o);
                 this.keyState.put(k, ObjectCollectionState.REMOVED);
-                this.keyToEdge.put(k, oe);
+                this.keyToEdge.put(k, edge);
             }
 
             // como puede estar varias veces un objecto agregado al map con distintos keys
@@ -129,7 +131,7 @@ public class HashMapLazyProxy extends HashMap<Object, Object> implements ILazyMa
     public synchronized void clearState() {
         this.entitiesState.clear();
         this.keyState.clear();
-        Map<Object, OrientEdge> newOE = new ConcurrentHashMap<>();
+        Map<Object, OEdge> newOE = new ConcurrentHashMap<>();
 
         for (Entry<Object, Object> entry : this.entrySet()) {
             Object k = entry.getKey();
@@ -194,12 +196,12 @@ public class HashMapLazyProxy extends HashMap<Object, Object> implements ILazyMa
         return keyState;
     }
 
-    public Map<Object, OrientEdge> getKeyToEdge() {
+    public Map<Object, OEdge> getKeyToEdge() {
         return keyToEdge;
     }
 
     private void setDirty() {
-        if (this.direction == Direction.OUT) {
+        if (this.direction == ODirection.OUT) {
             LOGGER.log(Level.FINER, "Colección marcada como Dirty. Avisar al padre.");
             this.dirty = true;
             LOGGER.log(Level.FINER, "weak:" + this.parent.get());

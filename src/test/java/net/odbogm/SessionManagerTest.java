@@ -51,7 +51,7 @@ import test.SimpleVertexWithImplement;
  *
  * @author SShadow
  */
-public class SessionManagerTest {
+public class SessionManagerTest extends IntegrationTest {
 
     private final Field orientdbTransactField;
 
@@ -66,22 +66,6 @@ public class SessionManagerTest {
     
     @Before
     public void setUp() {
-        System.out.println("Iniciando session manager...");
-        sm = new SessionManager("remote:localhost/test-ogm", "admin", "admin"
-                , 1, 10
-                )
-//                .setClassLevelLog(ObjectProxy.class, Level.FINEST)
-//                .setClassLevelLog(ClassCache.class, Level.FINER)
-//                .setClassLevelLog(Transaction.class, Level.FINER)
-//                .setClassLevelLog(ObjectProxy.class, Level.FINER)
-//                .setClassLevelLog(SimpleCache.class, Level.FINER)
-//                .setClassLevelLog(ArrayListLazyProxy.class, Level.FINER)
-//                .setClassLevelLog(ObjectMapper.class, Level.FINEST)
-//                .setClassLevelLog(SObject.class, Level.FINER)
-//                .setClassLevelLog(TransparentDirtyDetectorInstrumentator.class, Level.FINER)
-                ;
-        System.out.println("Begin");
-        this.sm.begin();
         sm.getCurrentTransaction().setCacheCleanInterval(1);
         System.out.println("fin setup.");
     }
@@ -896,7 +880,8 @@ public class SessionManagerTest {
         
         //if the vertex has an empty string as enum value, this must not fail:
         OrientGraph g = sm.getGraphdb();
-        g.attach(((IObjectProxy)e).___getVertex());
+        sm.getCurrentTransaction().clearCache();
+       // g.attach(((IObjectProxy)e).___getVertex());
         ((IObjectProxy)e).___getVertex().setProperty("theEnum", " ");
         g.commit();
         

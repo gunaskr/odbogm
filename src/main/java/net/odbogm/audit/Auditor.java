@@ -1,6 +1,8 @@
 package net.odbogm.audit;
 
+import com.orientechnologies.orient.core.db.ODatabaseSession;
 import com.orientechnologies.orient.core.metadata.schema.OType;
+import com.orientechnologies.orient.core.record.OVertex;
 import com.tinkerpop.blueprints.impls.orient.OrientElement;
 import com.tinkerpop.blueprints.impls.orient.OrientGraph;
 import com.tinkerpop.blueprints.impls.orient.OrientGraphNoTx;
@@ -8,6 +10,7 @@ import com.tinkerpop.blueprints.impls.orient.OrientVertexType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -41,19 +44,17 @@ public class Auditor implements IAuditor {
         this.auditUser = user;
         
         // verificar que la clase de auditoría exista
-        if (this.transaction.getDBClass(ODBAUDITLOGVERTEXCLASS) == null) {
-            OrientGraphNoTx odb = this.transaction.getSessionManager().getGraphdbNoTx();
-            OrientVertexType olog = odb.createVertexType(ODBAUDITLOGVERTEXCLASS);
-            olog.createProperty("rid", OType.STRING);
-            olog.createProperty("timestamp", OType.DATETIME);
-            olog.createProperty("transactionID", OType.STRING);
-            olog.createProperty("opInTx", OType.INTEGER);
-            olog.createProperty("user", OType.STRING);
-            olog.createProperty("action", OType.INTEGER);
-            olog.createProperty("label", OType.STRING);
-            olog.createProperty("log", OType.STRING);
-            odb.shutdown();
-        }
+		if (this.transaction.getDBClass(ODBAUDITLOGVERTEXCLASS) == null) {
+			/*
+			 * OrientGraphNoTx odb = this.transaction.getSessionManager().getGraphdbNoTx();
+			 * OrientVertexType olog = odb.createVertexType(ODBAUDITLOGVERTEXCLASS);
+			 * olog.createProperty("rid", OType.STRING); olog.createProperty("timestamp",
+			 * OType.DATETIME); olog.createProperty("transactionID", OType.STRING);
+			 * olog.createProperty("opInTx", OType.INTEGER); olog.createProperty("user",
+			 * OType.STRING); olog.createProperty("action", OType.INTEGER);
+			 * olog.createProperty("label", OType.STRING); olog.createProperty("log",
+			 * OType.STRING); odb.shutdown();
+			 */}
     }
     
 
@@ -87,7 +88,7 @@ public class Auditor implements IAuditor {
         // crear un UUDI para todo el log a comitear.
         String ovLogID = UUID.randomUUID().toString();
         
-        OrientGraph odb = this.transaction.getGraphdb();
+        ODatabaseSession odb = this.transaction.getODatabaseSession();
         int opInTx = 0; //operation number in transaction
         
         for (LogData logData : logdata) {
@@ -103,11 +104,14 @@ public class Auditor implements IAuditor {
             ologData.put("label", logData.label);
             ologData.put("log", logData.odata != null ? logData.odata.toString() : logData.data);
             
-            odb.addVertex("class:" + ODBAUDITLOGVERTEXCLASS, ologData);
+            OVertex newVertex = odb.newVertex(ODBAUDITLOGVERTEXCLASS);
+            for(Entry<String,Object> entry: ologData.entrySet()) {
+            	newVertex.setProperty(entry.getKey(), entry.getValue());
+            }
         }
         
         odb.commit();
-        odb.shutdown();
+        odb.close();
         this.logdata.clear();
     }
 }

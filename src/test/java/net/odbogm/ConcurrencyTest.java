@@ -18,21 +18,9 @@ import test.SimpleVertexEx;
  *
  * @author jbertinetti
  */
-public class ConcurrencyTest {
+public class ConcurrencyTest extends IntegrationTest {
 
     private final int poolSize = 5;
-
-    private SessionManager sm;
-
-
-    @Before
-    public void setUp() {
-        System.out.println("Iniciando session manager...");
-        sm = new SessionManager("remote:localhost/test-ogm", "admin", "admin",
-                1, poolSize).setClassLevelLog(Transaction.class, Level.FINER);
-        sm.begin();
-        System.out.println("fin setup.");
-    }
 
 
     @After

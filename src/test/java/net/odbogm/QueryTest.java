@@ -19,21 +19,29 @@ import test.SimpleVertexEx;
  *
  * @author jbertinetti
  */
-public class QueryTest {
-
-    private SessionManager sm;
-
-
-    @Before
-    public void setUp() {
-        sm = new SessionManager("remote:localhost/test-ogm", "admin", "admin");
-        sm.begin();
-    }
-
+public class QueryTest extends IntegrationTest {
 
     @After
     public void tearDown() {
         sm.shutdown();
+    }
+    
+    @Test
+    public void testSimpleSave() {
+        
+        SimpleVertexEx sve = new SimpleVertexEx();
+
+        System.out.println("guardado del objeto limpio.");
+        SimpleVertexEx stored = this.sm.store(sve);
+        sm.commit();
+
+        System.out.println("consultando por SimpleVertex....");
+        List<SimpleVertexEx> list = sm.query(SimpleVertexEx.class);
+        assertTrue(list.size() > 0);
+        
+        assertTrue("rid " + stored.getRid() + "is not saved in db",list.stream().anyMatch(simpleVertexEx -> {
+        	return simpleVertexEx.getRid().equalsIgnoreCase(stored.getRid());
+        }));
     }
 
 
@@ -56,7 +64,7 @@ public class QueryTest {
         sve.initHashMap();
 
         System.out.println("guardado del objeto limpio.");
-        SimpleVertexEx stored = sm.store(sve);
+        SimpleVertexEx stored = this.sm.store(sve);
         sm.commit();
 
         System.out.println("consultando por SimpleVertex....");
@@ -81,35 +89,6 @@ public class QueryTest {
         System.out.println("***************************************************************");
     }
 
-    
-    /*
-     * Testea que el iterable de vértices crudos devuelto por una query pueda
-     * ser usado correctamente.
-     */
-    @Test
-    public void directIterable() throws Exception {
-        //creo un vértice asociado a otros 2
-        SimpleVertex sv1 = new SimpleVertex();
-        SimpleVertex sv2 = new SimpleVertex();
-        Foo foo = new Foo();
-        foo.add(sv1);
-        foo.add(sv2);
-        foo = sm.store(foo);
-        sm.commit();
-        String rid = sm.getRID(foo);
-        
-        try (ODBOrientDynaElementIterable<Vertex> list = sm.query(
-                "select expand(out('FooNode_lsve')) from (select from " + rid + ")")) {
-            
-            if (!list.iterator().hasNext()) {
-                fail("Empty list!");
-            } else {
-                Vertex v = list.iterator().next();
-                SimpleVertex sv = sm.get(SimpleVertex.class, v.getId().toString());
-                assertNotNull(sv);
-            }
-        }
-    }
     
     
     /*

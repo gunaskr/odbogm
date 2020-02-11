@@ -1,7 +1,8 @@
 package net.odbogm.proxy;
 
-import com.tinkerpop.blueprints.impls.orient.OrientEdge;
-import com.tinkerpop.blueprints.impls.orient.OrientVertex;
+import com.orientechnologies.orient.core.id.ORID;
+import com.orientechnologies.orient.core.record.OEdge;
+import com.orientechnologies.orient.core.record.OVertex;
 
 /**
  *
@@ -12,13 +13,13 @@ public interface IObjectProxy {
     public void ___setDeletedMark();
     public boolean ___isDeleted();
     
-    public OrientVertex ___getVertex();
-    public String ___getRid();
-    public void ___setVertex(OrientVertex v);
+    public OVertex ___getVertex();
+    public ORID ___getRid();
+    public void ___setVertex(OVertex v);
     public void ___injectRid();
     
-    public OrientVertex ___getEdge();
-    public void ___setEdge(OrientEdge v);
+    public OVertex ___getEdge();
+    public void ___setEdge(OEdge v);
     
     public Class<?> ___getBaseClass();
     public Object ___getProxiedObject();
