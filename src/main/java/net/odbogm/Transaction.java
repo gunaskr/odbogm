@@ -4,7 +4,6 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -16,7 +15,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.orientechnologies.orient.core.db.ODatabaseSession;
-import com.orientechnologies.orient.core.exception.OConcurrentModificationException;
 import com.orientechnologies.orient.core.id.ORID;
 import com.orientechnologies.orient.core.iterator.ORecordIteratorClass;
 import com.orientechnologies.orient.core.metadata.schema.OClass;
@@ -25,23 +23,11 @@ import com.orientechnologies.orient.core.record.OEdge;
 import com.orientechnologies.orient.core.record.OElement;
 import com.orientechnologies.orient.core.record.OVertex;
 import com.orientechnologies.orient.core.record.impl.ODocument;
-import com.orientechnologies.orient.core.sql.OCommandSQL;
 import com.orientechnologies.orient.core.sql.executor.OResultSet;
 import com.orientechnologies.orient.core.sql.query.OSQLSynchQuery;
-/*import com.tinkerpop.blueprints.ODirection;
-import com.tinkerpop.blueprints.Vertex;
-import com.tinkerpop.blueprints.impls.orient.OrientDynaElementIterable;
-import com.tinkerpop.blueprints.impls.orient.OEdge;
-import com.tinkerpop.blueprints.impls.orient.OElement;
-import com.tinkerpop.blueprints.impls.orient.OrientGraph;
-import com.tinkerpop.blueprints.impls.orient.OVertex;*/
-import com.tinkerpop.blueprints.Vertex;
-import com.tinkerpop.blueprints.impls.orient.OrientDynaElementIterable;
 
-import net.odbogm.annotations.Audit;
 import net.odbogm.annotations.CascadeDelete;
 import net.odbogm.annotations.RemoveOrphan;
-import net.odbogm.audit.Auditor;
 import net.odbogm.cache.ClassCache;
 import net.odbogm.cache.ClassDef;
 import net.odbogm.cache.SimpleCache;
@@ -50,19 +36,15 @@ import net.odbogm.exceptions.CollectionNotSupported;
 import net.odbogm.exceptions.ConcurrentModification;
 import net.odbogm.exceptions.IncorrectRIDField;
 import net.odbogm.exceptions.NoOpenTx;
-import net.odbogm.exceptions.NoUserLoggedIn;
 import net.odbogm.exceptions.OdbogmException;
 import net.odbogm.exceptions.ReferentialIntegrityViolation;
 import net.odbogm.exceptions.UnknownObject;
 import net.odbogm.exceptions.UnknownRID;
-import net.odbogm.exceptions.UnmanagedObject;
 import net.odbogm.exceptions.VertexJavaClassNotFound;
 import net.odbogm.proxy.IObjectProxy;
 import net.odbogm.proxy.ObjectProxyFactory;
-import net.odbogm.security.SObject;
 import net.odbogm.utils.ODBOrientDynaElementIterable;
 import net.odbogm.utils.ReflectionUtils;
-import net.odbogm.utils.ThreadHelper;
 import net.odbogm.utils.VertexUtils;
 
 /**
@@ -86,8 +68,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
     // acá. En caso contrario se recupera desde la base.
     private SimpleCache objectCache = new SimpleCache();
 
-    private ConcurrentHashMap<OElement, Object> dirty = new ConcurrentHashMap<>();
-
     // objetos que han sido registrados para ser eliminados por el commit.
     private ConcurrentHashMap<String, Object> dirtyDeleted = new ConcurrentHashMap<>();
     
@@ -103,9 +83,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
     
     // mapa objeto -> proxy: contiene los objetos que se van almacenando mientras no se haga commit
     private ConcurrentHashMap<Object, Object> storedObjects = new ConcurrentHashMap<>();
-    
-    // Auditor asociado a la transacción
-    private Auditor auditor;
     
     private final SessionManager sm;
     private ODatabaseSession orientdbTransact;
@@ -162,37 +139,12 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
         }
     }
     
-    
-    /**
-     * Remove any object that is marked as dirty in this transaction
-     */
-    public void clear() {
-        this.dirty.clear();
-    }
-    
     /**
      * Quita todas las referencias del cache. Todas los futuros get's recuperarán instancias nuevas de objetos dentro de la transacción. Las
      * referencias existentes seguirán funcionando normalmente.
      */
     public void clearCache() {
         this.objectCache.clear();
-    }
-
-    /**
-     * Marca un objecto como dirty para ser procesado en el commit
-     *
-     * @param o objeto de referencia.
-     */
-    public synchronized void setAsDirty(Object o) throws UnmanagedObject {
-        if (o instanceof IObjectProxy) {
-            OElement rid = ((IObjectProxy) o).___getVertex();
-            LOGGER.log(Level.FINER, "Marcando como dirty: {0} - {1}",
-                    new Object[]{o.getClass().getSimpleName(), o.toString()});
-            LOGGER.log(Level.FINEST, ThreadHelper.getCurrentStackTrace());
-            this.dirty.put(rid, o);
-        } else {
-            throw new UnmanagedObject();
-        }
     }
 
     /**
@@ -223,24 +175,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
      */
     public Object getFromCache(String rid) {
         return this.objectCache.get(rid);
-    }
-
-    /**
-     * Vuelve a cargar todos los objetos que han sido marcados como modificados con los datos desde las base. Los objetos marcados como Dirty forman
-     * parte del siguiente commit
-     */
-    public synchronized void refreshDirtyObjects() {
-        initInternalTx();
-        
-        for (Map.Entry<OElement, Object> e : dirty.entrySet()) {
-            IObjectProxy o = (IObjectProxy) e.getValue();
-
-            // actualizar todos los objetos a nivel de cache de la base sin proceder a 
-            // bajarlos efectívamente.
-            o.___reload();
-        }
-        
-        closeInternalTx();
     }
 
     /**
@@ -287,142 +221,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
      */
     public synchronized void commit() throws ConcurrentModification, OdbogmException {
     	this.getODatabaseSession().commit();
-		/*
-		 * try { doCommit(); } catch (OException ex) { throw ex; //throw new
-		 * OdbogmException(ex, this); }
-		 */
-    }
-    
-    
-    private void doCommit() throws ConcurrentModification, OdbogmException {
-        initInternalTx();
-        
-        LOGGER.log(Level.FINER, "COMMIT");
-        if (this.nestedTransactionLevel <= 0) {
-            LOGGER.log(Level.FINER, "Iniciando COMMIT ==================================");
-            LOGGER.log(Level.FINER, "Objetos marcados como Dirty: {0}", dirty.size());
-            LOGGER.log(Level.FINER, "Objetos marcados como DirtyDeleted: {0}", dirtyDeleted.size());
-            
-            // procesar todos los objetos dirty
-            for (Map.Entry<OElement, Object> e : dirty.entrySet()) {
-                OElement rid = e.getKey();
-                IObjectProxy o = (IObjectProxy) e.getValue();
-                if (!o.___isDeleted() && o.___isValid()) {
-                    LOGGER.log(Level.FINER, "Commiting: {0} class: {1} isValid: {2}", new Object[]{rid, o.___getBaseClass(), o.___isValid()});
-                    // actualizar todos los objetos antes de bajarlos.
-                    
-                    
-                    //@TODO: CHEQUEAR VERSIÓN YA AC�
-                    
-                    o.___commit();
-                }
-            }
-            
-            // procesar todos los objetos a ser eliminados
-            for (Map.Entry<String, Object> e : dirtyDeleted.entrySet()) {
-                String rid = e.getKey();
-                IObjectProxy o = (IObjectProxy) e.getValue();
-                if (o.___isDeleted() && o.___isValid()) {
-                    LOGGER.log(Level.FINER, "Commiting delete: {0}", rid);
-                    this.internalDelete(e.getValue());
-                }
-            }
-            
-            
-            LOGGER.log(Level.FINER, "Fin persistencia. <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n");
-            // comitear los vértices
-            LOGGER.log(Level.FINER, "llamando al commit de la base");
-            try {
-                this.orientdbTransact.commit();
-            } catch (OConcurrentModificationException ex) {
-                throw new ConcurrentModification(ex, this);
-            }
-            LOGGER.log(Level.FINER, "finalizado.");
-
-            // si se está en modalidad audit, grabar los logs
-            if (this.isAuditing()) {
-                LOGGER.log(Level.FINER, "grabando auditoría...");
-                this.getAuditor().commit();
-                this.orientdbTransact.commit();
-                LOGGER.log(Level.FINER, "finalizado.");
-            }
-            
-            //cleaning:
-            
-            // refrescar las referencias del caché
-            String newRid;
-            LOGGER.log(Level.FINER, "NewRIDs: {0}", newrids.size());
-            for (Iterator<String> iterator = newrids.iterator(); iterator.hasNext();) {
-                String tempRid = iterator.next();
-                if (getFromCache(tempRid) != null) {
-                    // reemplazar el rid con el que le asignó la base luego de persistir el objeto
-                    Object o = getFromCache(tempRid);
-                    removeFromCache(tempRid);
-                    newRid = sm.getRID(o);
-                    addToCache(newRid, o);
-                    //actualizar rid inyectado si corresponde
-                    ((IObjectProxy)o).___injectRid();
-                }
-            }
-            newrids.clear();
-            
-            //remove dirty mark of commited elements
-            this.dirty.entrySet().stream().
-                    map(e -> (IObjectProxy)e.getValue()).
-                    filter(o -> !o.___isDeleted() && o.___isValid()).
-                    forEach(o -> { /*o.___updateIndirectLinks();*/ o.___removeDirtyMark(); });
-            
-//            for (var e : this.dirty.entrySet()) {
-//                IObjectProxy o = (IObjectProxy)e.getValue();
-//                if (!o.___isDeleted() && o.___isValid()) {
-//                    o.___updateIndirectLinks();
-//                    o.___removeDirtyMark();
-//                    Object oo = o.___getProxiedObject();
-//                }
-//            }
-            
-            this.dirtyDeleted.clear();
-            this.dirty.clear();
-            this.storedObjects.clear();
-            
-        } else {
-            LOGGER.log(Level.FINER, "TransactionLevel: {0}", this.nestedTransactionLevel);
-            this.nestedTransactionLevel--;
-        }
-        LOGGER.log(Level.FINER, "FIN DE COMMIT! ----------------------------\n\n");
-        closeInternalTx();
-    }
-
-    /**
-     * realiza un rollback sobre la transacción activa.
-     */
-    public synchronized void rollback() {
-        initInternalTx();
-        LOGGER.log(Level.FINER, "Rollback ------------------------");
-        LOGGER.log(Level.FINER, "Dirty objects: {0}", dirty.size());
-        LOGGER.log(Level.FINER, "Dirty deleted objects: {0}", dirtyDeleted.size());
-        
-        this.orientdbTransact.rollback();
-        
-        // refrescar todos los objetos
-        for (Map.Entry<OElement, Object> entry : dirty.entrySet()) {
-            IObjectProxy value = (IObjectProxy) entry.getValue();
-            value.___rollback();
-        }
-
-        
-//        // se opta por eliminar el caché de objetos recuperados de la base en un commit o rollback
-//        // por lo que futuros pedidos a la base fuera de la transacción devolverá una nueva instancia
-//        // del objeto.
-//        this.objectCache.clear();
-        // limpiar el caché de objetos modificados
-        this.dirty.clear();
-        // lipiar el caché de objetos a borrar.
-        this.dirtyDeleted.clear();
-        
-        this.nestedTransactionLevel = 0;
-        LOGGER.log(Level.FINER, "FIN ROLLBACK.");
-        closeInternalTx();
     }
 
     /**
@@ -449,13 +247,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
         if (proxy != null) {
             // devolver la instancia recuperada
             LOGGER.log(Level.FINER, "El objeto original ya había sido persistido. Se devuelve la instancia creada inicialmente.");
-
-            // Aplicar los controles de seguridad.
-            if ((this.sm.getLoggedInUser() != null) && (proxy instanceof SObject)) {
-                LOGGER.log(Level.FINER, "SObject detectado. Aplicando seguridad de acuerdo al usuario logueado: {0}",
-                        this.sm.getLoggedInUser().getName());
-                ((SObject) proxy).validate(this.sm.getLoggedInUser());
-            }
 
             return proxy;
         }
@@ -504,14 +295,7 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
             
             // convertir los embedded
             this.objectMapper.collectionsToEmbedded(proxy, oClassDef);
-
-            if (this.isAuditing()) {
-                this.auditLog((IObjectProxy) proxy, Audit.AuditType.WRITE, "STORE", omap);
-            }
-
-            LOGGER.log(Level.FINER, "Marcando como dirty: {0}", proxy.getClass().getSimpleName());
-            this.dirty.put(v, proxy);
-
+            
             // si se está en proceso de commit, registrar el objeto junto con el proxy para 
             // que no se genere un loop con objetos internos que lo referencien.
             this.storedObjects.put(o, proxy);
@@ -549,9 +333,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
                 OEdge oe = this.orientdbTransact.newEdge(
                         v, ((IObjectProxy) innerO).___getVertex(), graphRelationName);
                 edgesToSave.add(oe);
-                if (this.isAuditing()) {
-                    this.auditLog((IObjectProxy) proxy, Audit.AuditType.WRITE, "STORE: " + graphRelationName, oe);
-                }
             }
 
             /* 
@@ -574,7 +355,7 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
                 if (value instanceof List) {
                     // crear un objeto de la colección correspondiente para poder trabajarlo
                     // Class<?> oColection = oClassDef.linkLists.get(field);
-                    Collection innerCol = (Collection) value;
+                    Collection<?> innerCol = (Collection<?>) value;
 
                     // recorrer la colección verificando el estado de cada objeto.
                     LOGGER.log(Level.FINER, "Nueva lista: {0}: {1} elementos", new Object[]{graphRelationName, innerCol.size()});
@@ -599,13 +380,10 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
                         LOGGER.log(Level.FINE, "-----> agregando un edge a: {0}", ioproxied.___getVertex().getIdentity());
                         OEdge oe = this.orientdbTransact.newEdge(v, ioproxied.___getVertex(), graphRelationName);
                         edgesToSave.add(oe);
-                        if (this.isAuditing()) {
-                            this.auditLog((IObjectProxy) proxy, Audit.AuditType.WRITE, "STORE: " + graphRelationName, oe);
-                        }
                     }
                 } else if (value instanceof Map) {
-                    HashMap innerMap = (HashMap) value;
-                    innerMap.forEach(new BiConsumer() {
+                    HashMap<?,?> innerMap = (HashMap<?,?>) value;
+                    innerMap.forEach(new BiConsumer<Object, Object>() {
                         @Override
                         public void accept(Object imk, Object imV) {
                             // para cada entrada, verificar la existencia del objeto y crear un Edge.
@@ -626,10 +404,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
                             // crear un link entre los dos objetos.
                             LOGGER.log(Level.FINER, "-----> agregando el edges de {0} para {1} key: {2}", new Object[]{v.getIdentity().toString(), ioproxied.___getVertex().toString(), imk});
                             OEdge oe = orientdbTransact.newEdge( v, ioproxied.___getVertex(), graphRelationName);
-                            
-                            if (isAuditing()) {
-                                auditLog((IObjectProxy) finalProxy, Audit.AuditType.WRITE, "STORE: " + graphRelationName, oe);
-                            }
                             // agragar la key como atributo.
                             if (Primitives.PRIMITIVE_MAP.get(imk.getClass()) != null) {
                                 LOGGER.log(Level.FINER, "la prop del edge es primitiva");
@@ -669,12 +443,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
         }
 
         LOGGER.log(Level.FINER, "FIN del Store ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
-
-        // Aplicar los controles de seguridad.
-        if ((this.sm.getLoggedInUser() != null) && (proxy instanceof SObject)) {
-            LOGGER.log(Level.FINER, "SObject detectado. Aplicando seguridad de acuerdo al usuario logueado: {0}", this.sm.getLoggedInUser().getName());
-            ((SObject) proxy).validate(this.sm.getLoggedInUser());
-        }
         
         closeInternalTx();
         return proxy;
@@ -765,10 +533,7 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
                     if (f.isAnnotationPresent(CascadeDelete.class) || f.isAnnotationPresent(RemoveOrphan.class)) {
                         LOGGER.log(Level.FINER, "CascadeDelete|RemoveOrphan presente. Activando el objeto...");
                         // activar el campo.
-                        Collection oCol = (Collection) f.get(toRemove);
-                        if (oCol != null) {
-                            String garbage = oCol.toString();
-                        }
+                        Collection<?> oCol = (Collection<?>) f.get(toRemove);
                     }
                 } catch (IllegalArgumentException | IllegalAccessException ex) {
                     Logger.getLogger(Transaction.class.getName()).log(Level.SEVERE, null, ex);
@@ -834,7 +599,7 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
                     LOGGER.log(Level.FINER, "procesando campo: " + field);
 
 //                    Collection oCol = (Collection) f.get(((IObjectProxy) toRemove).___getBaseObject());
-                    Collection oCol = (Collection) f.get(toRemove);
+                    Collection<?> oCol = (Collection<?>) f.get(toRemove);
 
                     // si hay una colección y corresponde hacer la cascada.
                     if ((oCol != null) && (f.isAnnotationPresent(CascadeDelete.class))) {
@@ -898,14 +663,9 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
 
             }
 
-            if (this.isAuditing()) {
-                this.auditLog((IObjectProxy) toRemove, Audit.AuditType.DELETE, "DELETE", null);
-            }
-
             //ovToRemove.remove(); movido arriba.
             // si tengo un RID, proceder a removerlo de las colecciones.
             String ridToRemove = ((IObjectProxy) toRemove).___getVertex().getIdentity().toString();
-            this.dirty.remove(ridToRemove);
             this.removeFromCache(ridToRemove);
             
             // invalidar el objeto
@@ -1083,23 +843,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
     
     
     
-    
-    /**
-     * Transfiere todos los cambios de los objetos a las estructuras subyacentes.
-     */
-    public synchronized void flush() {
-        initInternalTx();
-        
-        for (Map.Entry<OElement, Object> e : dirty.entrySet()) {
-            IObjectProxy o = (IObjectProxy) e.getValue();
-
-            // actualizar todos los objetos a nivel de cache de la base sin proceder a 
-            // bajarlos efectívamente.
-            o.___commit();
-        }
-        
-        closeInternalTx();
-    }
 
     /**
      * retorna el SessionManager asociado a la transacción
@@ -1150,15 +893,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
 //    public void attach(OElement e) {
 //        this.orientdbTransact.attach(e);
 //    }
-    
-    /**
-     * Retorna la cantidad de objetos marcados como Dirty. Utilizado para los test
-     *
-     * @return retorna la cantidad de objetos marcados para el próximo commit
-     */
-    public int getDirtyCount() {
-        return this.dirty.size();
-    }
     /**
      * Retorna la cantidad de objetos marcados para ser eliminados cuando se cierre la transacción. Utilizado para los test
      *
@@ -1166,28 +900,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
      */
     public int getDirtyDeletedCount() {
         return this.dirtyDeleted.size();
-    }
-
-    /**
-     * Returns the dirty objects in the transaction.
-     * @return 
-     */
-    public Collection<Object> getDirty() {
-        return this.dirty.values();
-    }
-    
-    /**
-     * Only for debug. Returns the dirty objects cache.
-     *
-     * @return Map of rids and the identity hash code of the dirty objects.
-     */
-    public Map<OElement, Object> getDirtyCache() {
-        Map <OElement, Object> dc = new HashMap();
-        for (Map.Entry<OElement, Object> entry : this.dirty.entrySet()) {
-            Object value = entry.getValue();
-            dc.put(entry.getKey(), System.identityHashCode(value));
-        }
-        return dc;
     }
 
     /**
@@ -1240,10 +952,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
                 ret = this.get(c, rid);
             } else {
                 LOGGER.log(Level.FINER, "Objeto Recupeardo del caché.");
-                // validar contra el usuario actualmente logueado si corresponde.
-                if ((this.sm.getLoggedInUser() != null) && (ret instanceof SObject)) {
-                    ((SObject) ret).validate(this.sm.getLoggedInUser());
-                }
             }
 
         } catch (ClassNotFoundException ex) {
@@ -1335,20 +1043,7 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
             addToCache(rid, o);
         }
 
-        // Aplicar los controles de seguridad.
-        LOGGER.log(Level.FINER, "Verificar la seguridad: LoggedIn: {0} SObject: {1}",
-                new Object[]{this.sm.getLoggedInUser() != null, o instanceof SObject});
-        if ((this.sm.getLoggedInUser() != null) && (o instanceof SObject)) {
-            LOGGER.log(Level.FINER, "SObject detectado. Aplicando seguridad de acuerdo al usuario logueado: {0}",
-                    this.sm.getLoggedInUser().getName());
-            ((SObject) o).validate(this.sm.getLoggedInUser());
-        }
-
         LOGGER.log(Level.FINER, "Auditar?");
-        if (this.isAuditing()) {
-            LOGGER.log(Level.FINER, "loguear datos...");
-            this.auditLog((IObjectProxy) o, Audit.AuditType.READ, "READ", null);
-        }
         LOGGER.log(Level.FINER, "fin auditoría.");
         
         LOGGER.log(Level.FINER, "Fin get: {0} : {1} ihc: {2}^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
@@ -1364,11 +1059,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
         try {
             // verificar si ya no se ha cargado
             o = this.objectMapper.hydrate(type, e, this);
-
-            // Aplicar los controles de seguridad.
-            if ((this.sm.getLoggedInUser() != null) && (o instanceof SObject)) {
-                ((SObject) o).validate(this.sm.getLoggedInUser());
-            }
 
         } catch (InstantiationException ex) {
             Logger.getLogger(SessionManager.class.getName()).log(Level.SEVERE, null, ex);
@@ -1429,7 +1119,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
     @Override
     public long query(String sql, String retVal) {
         initInternalTx();
-        this.flush();
         
         OResultSet query = this.getODatabaseSession().query(sql);
         Optional<OElement> findFirst = query.elementStream().findFirst();
@@ -1458,7 +1147,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
     @Override
     public <T> List<T> query(Class<T> clazz) {
         initInternalTx();
-        this.flush();
 
         long init = System.currentTimeMillis();
 
@@ -1491,7 +1179,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
     @Override
     public <T> List<T> query(Class<T> clase, String body) {
         initInternalTx();
-        this.flush();
 
         ArrayList<T> ret = new ArrayList<>();
 
@@ -1529,9 +1216,7 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
         ArrayList<T> ret = new ArrayList<>();
 
         LOGGER.log(Level.FINER, sql + " param: " + param);
-        for (Vertex v : (Iterable<Vertex>) this.orientdbTransact.command(query).execute(param)) {
-            ret.add(this.get(clase, v.getId().toString()));
-        }
+        //TODO: QUERY
         
         closeInternalTx();
         return ret;
@@ -1565,9 +1250,7 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
         ArrayList<T> ret = new ArrayList<>();
 
         LOGGER.log(Level.FINER, sql);
-        for (Vertex v : (Iterable<Vertex>) this.orientdbTransact.command(query).execute(param)) {
-            ret.add(this.get(clase, v.getId().toString()));
-        }
+      //TODO: QUERY
         closeInternalTx();
         return ret;
     }
@@ -1584,57 +1267,6 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
         //OClass ret = orientdbTransact.getRawGraph().getMetadata().getSchema().getClass(clase);
         closeInternalTx();
         return ret;
-    }
-
-    // Procesos de auditoría
-    
-    /**
-     * Comienza a auditar los objetos y los persiste con el nombre de usuario dado.
-     * Si se pasa un null, se desactiva la auditoría.
-     *
-     * @param user UserSID String only.
-     */
-    public void setAuditOnUser(String user) {
-        this.auditor = user != null ? new Auditor(this, user) : null;
-    }
-
-    /**
-     * Comienza a auditar los objetos y los persiste con el nombre del usuario 
-     * actualmente logueado.
-     
-     * @throws NoUserLoggedIn Si no hay ningún usuario logueado.
-     */
-    public void setAuditOnUser() throws NoUserLoggedIn {
-        if (this.sm.getLoggedInUser() == null) {
-            throw new NoUserLoggedIn();
-        }
-        this.auditor = new Auditor(this, this.sm.getLoggedInUser().getUUID());
-    }
-
-    /**
-     * Realiza una auditoría a partir del objeto indicado.
-     *
-     * @param o IOBjectProxy a auditar
-     * @param at AuditType
-     * @param label Etiqueta de referencia
-     * @param data Objeto a loguear con un toString
-     */
-    public synchronized void auditLog(IObjectProxy o, int at, String label, Object data) {
-        if (this.isAuditing()) {
-            auditor.auditLog(o, at, label, data);
-        }
-    }
-
-    /**
-     * Determina si se está guardando un log de auditoría.
-     * @return true Si la auditoría está activa.
-     */
-    public boolean isAuditing() {
-        return this.auditor != null;
-    }
-
-    Auditor getAuditor() {
-        return this.auditor;
     }
 
     /**

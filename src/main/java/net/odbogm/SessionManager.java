@@ -15,24 +15,17 @@ import com.orientechnologies.orient.core.db.ODatabaseSession;
 import com.orientechnologies.orient.core.metadata.schema.OClass;
 import com.orientechnologies.orient.core.record.OEdge;
 import com.orientechnologies.orient.jdbc.OrientJdbcConnection;
-import com.tinkerpop.blueprints.impls.orient.OrientGraph;
-import com.tinkerpop.blueprints.impls.orient.OrientGraphFactory;
-import com.tinkerpop.blueprints.impls.orient.OrientGraphNoTx;
 
-import net.odbogm.audit.Auditor;
 import net.odbogm.exceptions.ClassToVertexNotFound;
 import net.odbogm.exceptions.ConcurrentModification;
 import net.odbogm.exceptions.IncorrectRIDField;
 import net.odbogm.exceptions.NoOpenTx;
-import net.odbogm.exceptions.NoUserLoggedIn;
 import net.odbogm.exceptions.OdbogmException;
 import net.odbogm.exceptions.ReferentialIntegrityViolation;
 import net.odbogm.exceptions.UnknownObject;
 import net.odbogm.exceptions.UnknownRID;
-import net.odbogm.exceptions.UnmanagedObject;
 import net.odbogm.exceptions.VertexJavaClassNotFound;
 import net.odbogm.proxy.IObjectProxy;
-import net.odbogm.security.UserSID;
 import net.odbogm.utils.ODBOrientDynaElementIterable;
 
 /**
@@ -47,8 +40,6 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
             LOGGER.setLevel(LogginProperties.SessionManager);
         }
     }
-
-    //private OrientGraphFactory factory;
     
     private final DataSource datasource;
 
@@ -63,49 +54,11 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
     
     private List<WeakReference<Transaction>> openTransactionsList = new ArrayList<>();
     private Transaction transaction; 
-    
-    // user logged on over which security controls are executed if applicable
-    private UserSID loggedInUser;
 
     public SessionManager(DataSource datasource) throws SQLException {
     	this.datasource = datasource;
     	this.objectMapper = new ObjectMapper();
     	this.setActivationStrategy(ActivationStrategy.CLASS_INSTRUMENTATION, true);
-    }
-    
-    /*public SessionManager(String url, String user, String passwd) {
-        this.init(url, user, passwd, 1, 10, true);
-    }
-
-    public SessionManager(String url, String user, String passwd, int minPool, int maxPool) {
-        this.init(url, user, passwd, minPool, maxPool, true);
-    }
-    
-    public SessionManager(String url, String user, String passwd, boolean loadAgent) {
-        this.init(url, user, passwd, 1, 10, loadAgent);
-    }
-
-    public SessionManager(String url, String user, String passwd, int minPool, int maxPool, boolean loadAgent) {
-        this.init(url, user, passwd, minPool, maxPool, loadAgent);
-    }
-    
-    private void init(String url, String user, String passwd, int minPool, int maxPool, boolean loadAgent) {
-        LOGGER.log(Level.INFO, "ODBOGM Session Manager initialization...");
-        this.factory = new OrientGraphFactory(url, user, passwd).setupPool(minPool, maxPool);
-        this.objectMapper = new ObjectMapper();
-        this.setActivationStrategy(ActivationStrategy.CLASS_INSTRUMENTATION, loadAgent);
-    }*/
-
-    /**
-     * Establece la estrategia a utilizar para detectar los cambios en los objetos.
-     * 
-     * @param as Estrategia de detección de dirty.
-     * @return this
-     * @deprecated Sólo hay una estrategia y no se puede cambiar.
-     */
-    @Deprecated
-    public SessionManager setActivationStrategy(ActivationStrategy as) {
-        return this.setActivationStrategy(as, true);
     }
 
     /**
@@ -124,14 +77,6 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
     public ActivationStrategy getActivationStrategy() {
         return this.activationStrategy;
     }
-    
-    /**
-     * Retorna el factory inicializado por el SessionManager
-     * @return 
-     */
-	/*
-	 * OrientGraphFactory getFactory() { return this.factory; }
-	 */
     
     /**
      * Inicia una transacción contra el servidor.
@@ -185,16 +130,6 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
     public void delete(Object toRemove) throws ReferentialIntegrityViolation, UnknownObject {
         this.transaction.delete(toRemove);
     }
-    
-    
-    /**
-     * Marca un objecto como dirty para ser procesado en el commit
-     *
-     * @param o objeto de referencia.
-     */
-    public synchronized void setAsDirty(Object o) throws UnmanagedObject {
-        this.transaction.setAsDirty(o);
-    }
 
     /**
      * Retorna el ObjectMapper asociado a la sesión
@@ -229,22 +164,6 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
         this.transaction.commit();
     }
 
-    /**
-     * Transfiere todos los cambios de los objetos a las estructuras subyacentes.
-     */
-    public synchronized void flush() {
-        
-        this.transaction.flush();
-    }
-
-    /**
-     * Vuelve a cargar todos los objetos que han sido marcados como modificados con los datos desde las base.
-     * Los objetos marcados como Dirty forman parte del siguiente commit
-     */
-    public synchronized void refreshDirtyObjects() {
-        this.transaction.refreshDirtyObjects();
-    }
-
     
     /**
      * Vuelve a cargar el objeto con los datos desde las base.
@@ -261,7 +180,7 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      * realiza un rollback sobre la transacción activa.
      */
     public synchronized void rollback() {
-        this.transaction.rollback();
+        this.transaction.getODatabaseSession().getTransaction().rollback();
     }
 
     /**
@@ -272,31 +191,6 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
 	  public void shutdown() {
 		  System.out.println("shut down ");
 		  }
-	 
-    /**
-     * Devuelve un objeto de comunicación con la base.
-     *
-     * @return retorna la referencia directa al driver del la base.
-     */
-	/*
-	 * public OrientGraph getGraphdb() { return this.factory.getTx(); }
-	 */
-    
-    /**
-     * Devuelve un objeto de comunicación con la base sin transacciones.
-     * @return 
-     */
-	/*
-	 * public OrientGraphNoTx getGraphdbNoTx() { return this.factory.getNoTx(); }
-	 */
-
-    /**
-     * Retorna la cantidad de objetos marcados como Dirty. Utilizado para los test
-     * @return retorna la cantidad de objetos marcados para el próximo commit
-     */
-    public int getDirtyCount() {
-        return this.transaction.getDirtyCount();
-    }
 
     
     /**
@@ -439,62 +333,6 @@ public class SessionManager implements IActions.IStore, IActions.IGet {
      */
     public OClass getDBClass(String clase) {
         return this.transaction.getDBClass(clase);
-    }
-
-    /**
-     * Comienza a auditar los objetos y los persiste con el nombre de usuario.
-     *
-     * @param user UserSID String only.
-     */
-    public void setAuditOnUser(String user) {
-        this.transaction.setAuditOnUser(user);
-    }
-
-    /**
-     * Comienza a auditar los objetos y los persiste con el nombre de usuario actualmente logueado.
-     *
-     */
-    public void setAuditOnUser() throws NoUserLoggedIn {
-        this.transaction.setAuditOnUser();
-    }
-
-    /**
-     * Establece el usuario actualmente logueado.
-     * 
-     * @param usid referencia al usuario
-     */
-    public void setLoggedInUser(UserSID usid) {
-        this.loggedInUser = usid;
-    }
-
-    /**
-     * Realiza una auditoría a partir del objeto indicado.
-     *
-     * @param o IOBjectProxy a auditar
-     * @param at AuditType
-     * @param label etiqueta de referencia
-     * @param data objeto a loguear con un toString
-     */
-    public void auditLog(IObjectProxy o, int at, String label, Object data) {
-        if (this.transaction.isAuditing()) {
-            this.transaction.auditLog(o, at, label, data);
-        }
-    }
-
-    /**
-     * Determina si se está guardando un log de auditoría.
-     * @return true Si la auditoría está activa.
-     */
-    public boolean isAuditing() {
-        return this.transaction.isAuditing();
-    }
-    
-    Auditor getAuditor() {
-        return this.transaction.getAuditor();
-    }
-    
-    public UserSID getLoggedInUser() {
-        return this.loggedInUser;
     }
     
     

@@ -128,17 +128,4 @@ public class QueryTest extends IntegrationTest {
         assertEquals("modified", res.iterator().next().getText());
     }
     
-    
-    /*
-     * Testea la consulta de nodos con clase distinta a la clase Java.
-     */
-    @Test
-    public void queryCustomEntityName() throws Exception {
-        sm.store(new Foo());
-        sm.commit();
-        List<Foo> lFoo = sm.query(Foo.class);
-        long cantFoo = sm.query("select count(*) from FooNode", "");
-        assertEquals(cantFoo, lFoo.size());
-    }
-    
 }
