@@ -26,7 +26,6 @@ import net.odbogm.ObjectStruct;
 import net.odbogm.SessionManager;
 import net.odbogm.Transaction;
 import net.odbogm.agent.ITransparentDirtyDetector;
-import net.odbogm.annotations.Audit.AuditType;
 import net.odbogm.annotations.Indirect;
 import net.odbogm.annotations.RemoveOrphan;
 import net.odbogm.cache.ClassDef;
@@ -34,7 +33,6 @@ import net.odbogm.exceptions.CollectionNotSupported;
 import net.odbogm.exceptions.DuplicateLink;
 import net.odbogm.exceptions.InvalidObjectReference;
 import net.odbogm.exceptions.ObjectMarkedAsDeleted;
-import net.odbogm.exceptions.OdbogmException;
 import net.odbogm.utils.ReflectionUtils;
 import net.odbogm.utils.ThreadHelper;
 import net.odbogm.utils.VertexUtils;
@@ -630,17 +628,6 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
         LOGGER.log(Level.FINER, "dirty: {0}", this.___dirty);
 
         if (this.___dirty || this.___baseElement.getIdentity().isNew()) {
-            this.___transaction.initInternalTx();
-
-            // make sure you are attached
-            // may be we do not need this.
-            /*if (this.___baseElement.getGraph() == null) {
-                LOGGER.log(Level.FINER, "El objeto no está atachado!");
-                this.___transaction.attach(this.___baseElement);
-            }*/
-            //this.___baseElement.save();
-
-            // get the class definition
             ClassDef cDef = this.___transaction.getObjectMapper().getClassDef(this.___proxiedObject);
 
             // get an updated map of the contained object
@@ -654,11 +641,6 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
             }
             //((OElement)this.___baseElement).setProperties(omap);
             oStruct.removedProperties.forEach(prop -> this.___baseElement.removeProperty(prop));
-
-            // save audit log if applicable.
-            /*if (this.___transaction.isAuditing() && !this.___baseElement.getIdentity().isNew()) {
-                this.___transaction.auditLog(this, AuditType.WRITE, "UPDATE", omap);
-            }*/
 
             // if it is a vertex
             if (this.___baseElement instanceof OVertex) {
@@ -677,7 +659,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                         // if it is null, the object may have been deleted
                         // therefore the corresponding vertex should be removed
                         // if it exists
-                    	Iterable<OEdge> edges = ov.getEdges(ODirection.OUT,graphRelationName);
+                    	Iterable<OEdge> edges = ov.getEdges(ODirection.OUT, graphRelationName);
                     	for(OEdge edge: ov.getEdges(ODirection.OUT, graphRelationName)) {
                     		this.removeEdge(edge, field);
                     	}
@@ -978,11 +960,7 @@ public class ObjectProxy implements IObjectProxy, MethodInterceptor {
                                 .getName()).log(Level.SEVERE, null, ex);
                     }
                 }
-            }
-            //moving the save here. Why not
-            //this.___baseElement.save();
-            //this.___transaction.getODatabaseSession().getTransaction().
-            this.___transaction.closeInternalTx();
+            };
         }
         LOGGER.log(Level.FINER, "fin commit ----");
     }

@@ -103,7 +103,10 @@ public class HashMapLazyProxy extends HashMap<Object, Object> implements ILazyMa
                 if (Primitives.PRIMITIVE_MAP.containsKey(this.keyClass)) {
                     LOGGER.log(Level.FINER, "primitive!!");
                     for (String prop : edge.getPropertyNames()) {
-                        k = edge.getProperty(prop);
+                    	// removing in and out properties to take only the custom property
+                    	if( !(prop.equalsIgnoreCase("IN") || prop.equalsIgnoreCase("OUT"))) {
+                    		k = edge.getProperty(prop);
+                    	}
                     }
                 } else {
                     LOGGER.log(Level.FINER, "clase como key");

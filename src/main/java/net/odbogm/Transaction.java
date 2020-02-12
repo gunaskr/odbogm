@@ -107,10 +107,7 @@ public class Transaction implements IActions.IStore, IActions.IGet, IActions.IQu
     public synchronized void initInternalTx() {
         if (this.orientdbTransact == null) {
             LOGGER.log(Level.FINEST, "\nAbriendo una transacción...");
-            //inicializar la transacción
             orientdbTransact = this.sm.getConnection();
-            orientdbTransact.activateOnCurrentThread();
-            //orientdbTransact.setThreadMode(OrientConfigurableGraph.THREAD_MODE.ALWAYS_AUTOSET);
             orientTransacLevel = 0;
         } else {
             //aumentar el anidamiento de transacciones

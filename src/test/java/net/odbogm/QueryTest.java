@@ -46,16 +46,11 @@ public class QueryTest extends IntegrationTest {
 
 
     /**
-     * Verificar que un query simple basado en una clase devueve el listado
-     * correcto de objetos.
-     */
+    * Verify that a simple query based on a class returns the list
+    * correct objects.
+    **/
     @Test
     public void testSimpleQuery() {
-        System.out.println("\n\n\n");
-        System.out.println("***************************************************************");
-        System.out.println("Query basado en la clase: verificar que devuelve la clase y los");
-        System.out.println("subtipos de la misma");
-        System.out.println("***************************************************************");
         
         SimpleVertexEx sve = new SimpleVertexEx();
         sve.initEnum();
@@ -66,27 +61,22 @@ public class QueryTest extends IntegrationTest {
         System.out.println("guardado del objeto limpio.");
         SimpleVertexEx stored = this.sm.store(sve);
         sm.commit();
-
-        System.out.println("consultando por SimpleVertex....");
-        List list = sm.query(SimpleVertex.class);
-        int isv = 0;
-        int isve = 0;
-        for (Object object : list) {
-            if (object instanceof SimpleVertexEx) {
-                isve++;
-            } else if (object instanceof SimpleVertex) {
-                isv++;
-            } else {
-                System.out.println("ERROR:  " + object.getClass() + 
-                        " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            }
-        }
-        assertTrue(isv > 0);
-        assertTrue(isve > 0);
-
-        System.out.println("***************************************************************");
-        System.out.println("Fin SimpleQuery");
-        System.out.println("***************************************************************");
+        
+        /* testing inner field */
+        SimpleVertex svinner = stored.svinner;
+        
+        List<SimpleVertex> list = sm.query(SimpleVertex.class);
+        assertTrue(list.size() > 0);
+        
+        assertTrue("rid " + stored.getRid() + "is not saved in db",list.stream().anyMatch(simpleVertexEx -> {
+        	return simpleVertexEx.getRid().equalsIgnoreCase(svinner.getRid());
+        }));
+        
+        /* testing nested objects */
+        assertTrue("not getting all the items", stored.alSV.size() == 3);
+        assertTrue("not getting all items in the map", stored.hmSV.size() == 3);
+        assertNotNull("value not present in map", stored.hmSV.get("key1"));
+        
     }
 
     
